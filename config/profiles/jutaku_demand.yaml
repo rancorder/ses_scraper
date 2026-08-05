@@ -1,0 +1,237 @@
+name: "受託開発・エンジニア高濃度需要スクリーニング"
+description: "受託／システム開発を主力とし、かつエンジニアを高濃度で求めている事業者をあぶり出す。協力会社・BP募集（外部調達意欲）と採用の本気度を最重視で加点し、SES／派遣専業・自社プロダクト専業・非開発業は減点する。SESエンジニアの売り込み先（需要側）を発見する目的。"
+
+keywords_search:
+  - 受託開発
+  - システム開発
+  - ソフトウェア開発
+  - 協力会社募集
+  - ビジネスパートナー募集
+  - エンジニア募集
+  - 開発会社
+
+scoring_axes:
+
+  - id: partner_recruitment
+    name: "協力会社・BP募集（外部調達意欲）"
+    points: 25
+    description: "「協力会社／パートナー／BP／外注先」＋「募集・求む・歓迎」を正規表現で検出。自社で人が足りず外から引く＝高濃度需要の決定打"
+    detection: regex
+    pattern: "(協力会社|協力企業|ビジネスパートナー|BPパートナー|協業パートナー|外注先|常駐パートナー|パートナー企業)[^。]{0,8}(募集|大募集|募集中|求む|歓迎|お待ち)"
+
+  - id: dev_contract_branding
+    name: "受託開発商材の表記"
+    points: 20
+    description: "受託・開発系ワードが2種類以上ヒット＝受託開発を主業とする"
+    detection: keyword_count
+    min_hits: 2
+    keywords:
+      - 受託開発
+      - システム開発
+      - ソフトウェア開発
+      - アプリ開発
+      - Web開発
+      - 業務システム開発
+      - 請負開発
+      - 受託
+      - システム受託
+      - 開発受託
+      - 受託案件
+      - 開発委託
+      - スマホアプリ開発
+      - 基幹システム開発
+      - DX開発
+      - 業務委託開発
+
+  - id: engineer_hiring
+    name: "エンジニア採用シグナル"
+    points: 20
+    description: "事業ページ・採用ページにエンジニア採用の明記"
+    detection: keyword_any
+    keywords:
+      - エンジニア募集
+      - エンジニア採用
+      - エンジニア積極採用
+      - エンジニア採用強化
+      - 開発エンジニア募集
+      - システムエンジニア募集
+      - We are hiring
+      - 仲間募集
+      - 一緒に働く仲間
+      - 採用強化中
+      - 技術者募集
+      - 開発メンバー募集
+
+  - id: aggressive_hiring
+    name: "採用の本気度（積極・大量・急募）"
+    points: 10
+    description: "「積極・大量・急募・増員・複数名・◯名」＋「採用・募集」を正規表現で検出"
+    detection: regex
+    pattern: "(積極|大量|急募|増員|複数名|多数|[0-9０-９]+名)[^。]{0,6}(採用|募集)"
+
+  - id: tech_breadth
+    name: "技術スタックの広さ・開発体制"
+    points: 10
+    description: "言語／FW／開発体制ワードが3種類以上ヒット＝エンジニアを抱え必要とする"
+    detection: keyword_count
+    min_hits: 3
+    keywords:
+      - Java
+      - PHP
+      - Python
+      - Ruby
+      - Go言語
+      - JavaScript
+      - TypeScript
+      - React
+      - Vue
+      - Laravel
+      - AWS
+      - インフラ
+      - フロントエンド
+      - バックエンド
+      - 開発チーム
+      - 開発部
+      - 技術部
+      - エンジニアチーム
+      - 開発本部
+
+  - id: demand_growth
+    name: "案件増加・事業拡大・人手不足シグナル"
+    points: 5
+    description: "需要が逼迫しているシグナル"
+    detection: keyword_any
+    keywords:
+      - 案件増加
+      - 引き合い増加
+      - 受注好調
+      - 事業拡大
+      - 案件多数
+      - 人手不足
+      - リソース不足
+      - 増員中
+      - 急成長
+      - 組織拡大
+      - 案件が豊富
+
+  - id: low_barrier_hiring
+    name: "採用ハードル低下（切実な人手不足）"
+    points: 5
+    description: "未経験歓迎・研修ありなど、ハードルを下げてでも採りたい状態"
+    detection: keyword_any
+    keywords:
+      - 未経験歓迎
+      - 未経験OK
+      - 未経験者歓迎
+      - 研修制度
+      - ポテンシャル採用
+      - 第二新卒
+      - 経験不問
+      - 学歴不問
+      - 異業種からの転職歓迎
+
+  - id: upstream_demand
+    name: "プライム・元請け（大量エンジニア需要）"
+    points: 5
+    description: "上流から受ける＝大規模で人手が要る"
+    detection: keyword_any
+    keywords:
+      - プライム案件
+      - 元請け
+      - 一次請け
+      - 直請け
+      - エンドユーザー直
+      - 大規模開発
+      - 大規模案件
+      - 上流工程
+
+  - id: penalty_ses_pure
+    name: "SES・派遣専業ペナルティ"
+    points: -15
+    description: "派遣・SES専業は受託リストの対象外（既存SES判定と棲み分け）"
+    detection: keyword_any
+    keywords:
+      - 人材派遣事業
+      - 労働者派遣事業
+      - エンジニア派遣専門
+      - SES専業
+      - SES専門
+      - 技術者派遣専門
+      - 派遣専業
+
+  - id: penalty_product_only
+    name: "自社プロダクト専業ペナルティ"
+    points: -10
+    description: "自社SaaS・パッケージ専業は突発的なエンジニア需要が低い"
+    detection: keyword_any
+    keywords:
+      - 自社プロダクトのみ
+      - SaaS専業
+      - 自社サービス運営のみ
+      - パッケージ販売のみ
+      - 自社製品専業
+
+  - id: penalty_non_dev
+    name: "非開発業ペナルティ"
+    points: -10
+    description: "開発を主業務としない（コンサル・代理店・紹介専業など）"
+    detection: keyword_any
+    keywords:
+      - コンサルティング専業
+      - 営業代行
+      - 広告代理店
+      - 人材紹介専業
+      - Webマーケティング専業
+      - 制作のみ
+
+  - id: penalty_individual
+    name: "個人・小規模ペナルティ"
+    points: -10
+    description: "個人・フリーランス・極小規模は需要量が限定的"
+    detection: keyword_any
+    keywords:
+      - 個人事業
+      - フリーランス
+      - 副業
+      - 一人会社
+      - 個人開発
+
+score_cap: 100
+score_floor: 0
+
+thresholds:
+  excellent: 50
+  good: 25
+
+ai_instruction: |
+  受託開発を主力とし、かつエンジニアを高濃度で欲しがっている事業者かどうかを評価してください。
+  最重要は「協力会社・ビジネスパートナー・BP募集」の有無です。自社案件が溢れて外部からエンジニアを調達したい状態＝SESエンジニアの最良の売り込み先です。
+  次点で「エンジニア採用シグナル」と「採用の本気度（積極・大量・急募・増員）」を重視します。
+  「未経験歓迎」「研修制度」などのハードル低下は、切実な人手不足のシグナルとして加点します。
+  受託らしさ（受託開発の明記・技術スタックの広さ・開発体制）はベース加点として扱います。
+  SES／派遣専業・自社プロダクト専業・非開発業・個人規模は減点してください（純SESは別リストで判定済みのため棲み分ける）。
+  50点以上＝エンジニア高濃度需要の受託開発企業（最優先アタック先）、25〜49点＝開発はやっているが需要は中程度として判定してください。
+
+crawl_paths:
+  - /
+  - /service
+  - /services
+  - /business
+  - /development
+  - /about
+  - /company
+  - /partner
+  - /partners
+  - /bp
+  - /cooperation
+  - /engineer
+  - /engineers
+  - /tech
+  - /technology
+  - /recruit
+  - /careers
+  - /career
+  - /jobs
+  - /works
+  - /work
+  - /jigyou

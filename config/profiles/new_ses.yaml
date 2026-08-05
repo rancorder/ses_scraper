@@ -1,0 +1,192 @@
+name: "真SES企業スクリーニング"
+description: "労働者派遣業・SES事業者を識別する。派遣許可番号・派遣商材の多数表記・事業内容・求人シグナルで加点し、受託専業・自社プロダクト主体は減点する。"
+
+keywords_search:
+  - SES
+  - 労働者派遣
+  - システムエンジニアリングサービス
+  - エンジニア派遣
+  - ITエンジニア派遣
+  - 技術者派遣
+  - 人材派遣 IT
+
+scoring_axes:
+
+  - id: dispatch_branding
+    name: "派遣・SES商材の表記"
+    points: 25
+    description: "派遣系ワードが2種類以上ヒット"
+    detection: keyword_count
+    min_hits: 2
+    keywords:
+      - 人材派遣
+      - エンジニア派遣
+      - 技術者派遣
+      - ITエンジニア派遣
+      - システムエンジニア派遣
+      - 派遣サービス
+      - 派遣事業
+      - 特定派遣
+      - 一般派遣
+      - 派遣
+      - 常駐
+      - 客先常駐
+      - 常駐型
+      - エンジニア紹介
+      - 技術者紹介
+      - IT人材
+      - ITエンジニア
+      - SES
+      - システムエンジニアリング
+
+  - id: dispatch_license
+    name: "派遣許可番号"
+    points: 25
+    description: "派XX-XXXXXXを正規表現で検出"
+    detection: regex
+    pattern: "派[0-9一二三四五六七八九十百千万]+[-－][0-9一二三四五六七八九十百千万]+"
+
+  - id: ses_explicit
+    name: "SES・システムエンジニアリングサービス明記"
+    points: 20
+    description: "事業内容にSESまたはシステムエンジニアリングサービスの明記"
+    detection: keyword_any
+    keywords:
+      - システムエンジニアリングサービス
+      - SES事業
+      - SESサービス
+      - エンジニアリングサービス
+      - SES事業部
+      - SES型
+      - SES契約
+      - 準委任契約
+      - 技術者派遣事業
+      - エンジニアアウトソーシング
+
+  - id: dispatch_business
+    name: "労働者派遣事業＋許可の併記"
+    points: 10
+    description: "「労働者派遣事業」と「許可」が両方ヒット"
+    detection: keyword_all
+    keywords:
+      - 労働者派遣事業
+      - 許可
+
+  - id: engineer_dispatch
+    name: "エンジニア派遣・常駐シグナル"
+    points: 10
+    description: "事業内容にエンジニア派遣・常駐の記載"
+    detection: keyword_any
+    keywords:
+      - エンジニア派遣
+      - 技術者派遣
+      - ITエンジニア派遣
+      - エンジニアの派遣
+      - 客先常駐
+      - 常駐勤務
+      - 常駐型開発
+      - 常駐エンジニア
+      - 派遣エンジニア
+
+  - id: client_signals
+    name: "プロジェクト先・クライアント常駐シグナル"
+    points: 5
+    description: "クライアント常駐シグナルが存在"
+    detection: keyword_any
+    keywords:
+      - プロジェクト先
+      - クライアント先
+      - 取引先企業
+      - 常駐先
+      - 客先
+      - 常駐案件
+      - 参画
+      - 案件参画
+      - クライアント企業に常駐
+      - お客様先
+
+  - id: ses_terms
+    name: "マージン・還元率・単価"
+    points: 5
+    description: "SES業界特有のワード"
+    detection: keyword_any
+    keywords:
+      - マージン
+      - 還元率
+      - 単価
+      - 精算幅
+      - 稼働率
+      - 業務委託
+      - 準委任
+
+  - id: penalty_contract_only
+    name: "受託開発専業ペナルティ"
+    points: -20
+    detection: keyword_any
+    keywords:
+      - 受託開発専業
+      - 受託100%
+      - 受託専門
+      - 自社開発のみ
+
+  - id: penalty_own_product
+    name: "自社プロダクト主体ペナルティ"
+    points: -15
+    detection: keyword_any
+    keywords:
+      - 自社プロダクト
+      - 自社サービス主体
+      - 自社製品開発
+      - パッケージ開発専業
+
+  - id: penalty_prime_no_license
+    name: "プライム案件強調ペナルティ"
+    points: -10
+    detection: keyword_any
+    keywords:
+      - プライム案件のみ
+      - 元請けのみ
+      - 二次請けなし
+
+  - id: penalty_sier
+    name: "SIerとして自己定義ペナルティ"
+    points: -10
+    detection: keyword_any
+    keywords:
+      - SIerとして
+      - システムインテグレーター専業
+      - 総合システムインテグレーター
+
+score_cap: 100
+score_floor: 0
+
+thresholds:
+  excellent: 50
+  good: 25
+
+ai_instruction: |
+  SES（システムエンジニアリングサービス）事業者かどうかを評価してください。
+  派遣許可番号の有無と派遣商材の露出量が最重要です。
+  「常駐」「客先」「エンジニア派遣」「準委任」も重要なシグナルです。
+  受託開発専業・自社プロダクト主体の企業は低評価してください。
+  50点以上＝真SES、25〜49点＝SESハイブリッドとして判定してください。
+
+crawl_paths:
+  - /
+  - /service
+  - /services
+  - /business
+  - /about
+  - /company
+  - /haken
+  - /dispatch
+  - /ses
+  - /engineer
+  - /engineers
+  - /recruit
+  - /careers
+  - /career
+  - /works
+  - /work
+  - /partner
+  - /jigyou

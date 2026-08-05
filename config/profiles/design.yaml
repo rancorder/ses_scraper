@@ -1,0 +1,127 @@
+# ============================================================
+# 設計案件プロファイル
+# 目的: 設備レイアウト・機械設計・治具設計を外部委託している会社を探す
+# ============================================================
+
+name: 設備・機械設計 外部委託先
+description: 設備レイアウト・機械設計・治具設計を外注している製造業・設備会社
+
+# IPROSの検索キーワード
+keywords_search:
+  - 設備設計
+  - 機械設計
+  - 治具設計
+  - 設備レイアウト
+  - 生産設備
+  - 自動化設備
+  - FA設計
+  - 生産技術
+
+# ════════════════════════════════════
+# 評価軸（100点満点）
+# ════════════════════════════════════
+scoring_axes:
+
+  - id: factory_manufacturing
+    name: 製造業・工場保有
+    points: 35
+    description: 自社工場・製造ライン・生産設備を保有している製造業かどうか
+    detection: keyword_any
+    keywords:
+      - 工場
+      - 製造ライン
+      - 生産ライン
+      - 生産設備
+      - 生産技術
+      - 製造業
+      - 自社工場
+      - 設備投資
+      - FA
+      - 自動化
+      - 省人化
+      - 省力化
+      - ライン改善
+      - 設備導入
+
+  - id: design_outsource_signal
+    name: 設計外注シグナル
+    points: 30
+    description: 設計業務を外部委託している、または協力会社を求めている
+    detection: keyword_count
+    min_hits: 1
+    keywords:
+      - 設計外注
+      - 設計委託
+      - 設計業務委託
+      - 外注設計
+      - 設計パートナー
+      - 協力会社募集
+      - 設計リソース
+      - 外部設計
+      - 設計会社
+      - 外注先
+
+  - id: cad_usage
+    name: CAD使用・設計環境
+    points: 15
+    description: AutoCAD・SolidWorks等のCADツールを使用している
+    detection: keyword_any
+    keywords:
+      - AutoCAD
+      - SolidWorks
+      - CATIA
+      - Creo
+      - NX
+      - Inventor
+      - 3D CAD
+      - 2D CAD
+      - 3DCAD
+      - 設計図
+      - 図面
+      - CAD設計
+
+  - id: design_type
+    name: 設計種別
+    points: 15
+    description: 設備レイアウト・機械設計・治具設計・装置設計の具体的な記載がある
+    detection: keyword_any
+    keywords:
+      - 設備レイアウト
+      - レイアウト設計
+      - 機械設計
+      - 治具設計
+      - 装置設計
+      - ジグ設計
+      - 搬送装置
+      - 組立装置
+      - 検査装置
+      - 専用機
+
+  - id: contact_available
+    name: コンタクト手段
+    points: 5
+    description: 問い合わせフォームまたはメールアドレスが公開されている
+    detection: contact
+    keywords:
+      - お問い合わせ
+      - contact
+      - メール
+      - "@"
+
+# スコア上限
+score_cap: 100
+score_sum_max: 100
+
+# 判定閾値
+thresholds:
+  excellent: 60   # ◎ 優先営業候補
+  good: 40        # ○ 候補
+
+# Ollama判定指示
+ai_instruction: |
+  判定基準:
+  - 自社工場・製造ラインを持ち、設備設計・機械設計のニーズがある製造業かどうか
+  - 設備レイアウト・治具設計・装置設計を外部委託している、または検討している兆候があるか
+  - CADを使用した設計業務があり、設計リソース（人員・ツール）が不足している兆候があるか
+  client_scoreは設計外注ニーズの強さ(0-100)
+  partner_scoreは設計会社としての協業・受注可能性(0-100)

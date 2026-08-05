@@ -1,0 +1,185 @@
+# ============================================================
+# エッジAI・IoT・組み込み案件プロファイル
+# 目的: エッジコンピューター設計を外部委託している会社を探す
+# ベース: リスト精度評価システム概要.docx の評価軸をそのまま使用
+# ============================================================
+
+name: エッジAI・組み込み 協力企業候補
+description: エッジAI・IoT・組み込み開発を外注している、または協力企業を探している会社
+
+# IPROSの検索キーワード
+keywords_search:
+  - エッジAI
+  - 組み込み開発
+  - 画像処理
+  - IoT
+  - 組み込みシステム
+  - FPGA
+  - 画像検査
+  - エッジコンピューティング
+
+# ════════════════════════════════════
+# 評価軸（100点満点 / 合計115点→キャップ）
+# ════════════════════════════════════
+scoring_axes:
+
+  - id: product_presence
+    name: 自社製品の有無
+    points: 40
+    description: 型番・スペック値（MHz/W/fps等）・製品ページURLの存在
+    detection: keyword_and_pattern
+    keywords:
+      - 製品情報
+      - 製品一覧
+      - 型番
+      - 仕様
+      - スペック
+      - ラインアップ
+      - ソリューション
+    patterns:
+      - "[A-Z]{1,5}[-_]?\\d{2,}[-_]?[A-Z0-9]*"        # 型番パターン
+      - "\\d+\\.?\\d*\\s*(MHz|GHz|MB|GB|mA|mW|W|V|fps)" # スペックパターン
+    url_signals:
+      - /product
+      - /lineup
+      - /solution
+      - /technology
+
+  - id: oem_presence
+    name: OEM／受託開発対応
+    points: 20
+    description: OEM・ODM・共同開発・受託製造・技術提携キーワード（2語以上）
+    detection: keyword_count
+    min_hits: 2
+    keywords:
+      - OEM
+      - ODM
+      - 受託開発
+      - 受託製造
+      - 共同開発
+      - 技術提携
+      - カスタム開発
+      - 委託開発
+      - 協力会社
+      - パートナー企業
+
+  - id: iot_domain
+    name: IoT技術領域
+    points: 10
+    description: IoT・M2M・スマートデバイス・Internet of Things等
+    detection: keyword_any
+    keywords:
+      - IoT
+      - M2M
+      - Internet of Things
+      - コネクテッドデバイス
+      - スマートデバイス
+      - 無線通信
+      - リモートモニタリング
+      - センサーネットワーク
+
+  - id: embedded_domain
+    name: 組み込み技術領域
+    points: 10
+    description: 組み込み・FPGA・RTOS・ARM・ファームウェア・Yocto等
+    detection: keyword_any
+    keywords:
+      - 組み込み
+      - マイコン
+      - RTOS
+      - FPGA
+      - ARM
+      - ARM Cortex
+      - ファームウェア
+      - Yocto
+      - Buildroot
+      - RISC-V
+      - ベアメタル
+
+  - id: vision_domain
+    name: 画像処理・ビジョン領域
+    points: 10
+    description: 画像処理・カメラ・物体検出・OpenCV・深度カメラ等
+    detection: keyword_any
+    keywords:
+      - 画像処理
+      - カメラ
+      - OpenCV
+      - 物体検出
+      - コンピュータビジョン
+      - 深度カメラ
+      - 顔認識
+      - 画像認識
+      - 外観検査
+      - マシンビジョン
+
+  - id: ai_recruiting
+    name: AIエンジニア採用中
+    points: 10
+    description: 機械学習・LLM・生成AI・データサイエンティスト募集（採用ページ）
+    detection: keyword_any_on_page
+    target_pages: [/recruit, /career, /jobs, /採用]
+    keywords:
+      - 機械学習
+      - LLM
+      - 生成AI
+      - データサイエンティスト
+      - AIエンジニア
+      - 深層学習
+      - ディープラーニング
+      - MLエンジニア
+
+  - id: embedded_recruiting
+    name: 組み込みエンジニア採用中
+    points: 5
+    description: 組み込み・FPGA・ビジョン系エンジニア募集（採用ページ）
+    detection: keyword_any_on_page
+    target_pages: [/recruit, /career, /jobs, /採用]
+    keywords:
+      - 組み込みエンジニア
+      - FPGAエンジニア
+      - ファームウェアエンジニア
+      - 制御エンジニア
+      - 組み込みソフト
+
+  - id: site_activity
+    name: サイト更新の活発さ
+    points: 5
+    description: ニュース・ブログ・プレスリリースページの存在
+    detection: url_exists
+    url_signals:
+      - /news
+      - /blog
+      - /press
+      - /topics
+      - /お知らせ
+      - /ニュース
+
+  - id: contact_available
+    name: コンタクト手段
+    points: 5
+    description: メールアドレス公開または問い合わせフォームの存在
+    detection: contact
+    keywords:
+      - お問い合わせ
+      - contact
+      - メール
+      - "@"
+
+# スコア上限とキャップ
+score_cap: 100
+score_sum_max: 115
+
+# 判定閾値
+thresholds:
+  excellent: 70   # ◎ 営業候補
+  good: 50        # ○ 準候補（要確認）
+
+# Ollama判定指示
+ai_instruction: |
+  判定基準:
+  - エッジAI・IoT・組み込み開発の自社製品・技術を持つ企業かどうか
+  - OEM/受託開発で外部パートナーを求めているかどうか
+  - 組み込み・画像処理・AIエンジニアを採用・活用しているかどうか
+  client_scoreはエッジAI・組み込み技術の深さ(0-100)
+  partner_scoreは協力企業・外注先としての需要の高さ(0-100)

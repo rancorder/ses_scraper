@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+webui/uploads/*
+company_analyzer/output/*.xlsx
+logs/*.log
+.env
+*.log

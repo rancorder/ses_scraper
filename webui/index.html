@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SES Scraper Dashboard</title>
+<style>
+  /* ── リセット & ベース ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #151820;
+    --surface2:  #1c2030;
+    --border:    #252a3a;
+    --accent:    #4f8ef7;
+    --accent2:   #7c6af7;
+    --green:     #3ecf8e;
+    --yellow:    #f5c842;
+    --red:       #f76f6f;
+    --text:      #e2e8f0;
+    --muted:     #6b7694;
+    --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+    --font-ui:   'Outfit', 'Hiragino Sans', sans-serif;
+    --radius:    10px;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    grid-template-rows: 64px 1fr;
+    min-height: 100vh;
+    gap: 0;
+  }
+
+  header {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+  }
+
+  .logo {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    transition: all 0.3s;
+  }
+
+  .status-badge .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: all 0.3s;
+  }
+
+  .status-badge.running .dot {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 1.5s infinite;
+  }
+
+  .status-badge.running { border-color: var(--green); color: var(--green); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  .header-right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+
+  .time-display {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  aside {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+  }
+
+  main {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title::before {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 12px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  .profile-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .profile-btn {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .profile-btn:hover { border-color: var(--accent); background: #1a2240; }
+
+  .profile-btn.selected {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, #1a2240, #1a1a30);
+    box-shadow: 0 0 0 1px var(--accent) inset;
+  }
+
+  .profile-btn-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .profile-btn.selected .profile-btn-name { color: var(--accent); }
+  .profile-btn-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .profile-btn-meta { font-size: 10px; color: var(--accent); margin-top: 2px; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+  }
+
+  input[type=text], input[type=number], select {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+
+  input:focus, select:focus { border-color: var(--accent); }
+  .form-row { margin-bottom: 12px; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+    box-shadow: 0 4px 15px rgba(79,142,247,0.3);
+  }
+
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(79,142,247,0.4); }
+  .btn-primary:active { transform: translateY(0); }
+
+  .btn-danger {
+    background: linear-gradient(135deg, var(--red), #c0392b);
+    color: white;
+    box-shadow: 0 4px 15px rgba(247,111,111,0.3);
+  }
+
+  .btn-danger:hover { transform: translateY(-1px); }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+  .btn-full { width: 100%; }
+
+  .progress-section { display: flex; flex-direction: column; gap: 12px; }
+  .progress-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .progress-label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .progress-pct { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: var(--accent); }
+
+  .progress-track {
+    height: 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 4px;
+    transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+    box-shadow: 0 0 12px rgba(79,142,247,0.5);
+  }
+
+  .progress-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+  .stat-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+  .stat-value { font-family: var(--font-mono); font-size: 26px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+  .stat-label { font-size: 10px; color: var(--muted); font-weight: 500; letter-spacing: 0.05em; }
+  .stat-excellent .stat-value { color: var(--green); }
+  .stat-good      .stat-value { color: var(--accent); }
+  .stat-total     .stat-value { color: var(--text); }
+  .stat-error     .stat-value { color: var(--red); }
+
+  .eta-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .eta-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .eta-box-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.05em; }
+  .eta-box-value { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text); }
+  .eta-box-value.accent { color: var(--accent); }
+  .eta-box-value.green  { color: var(--green); }
+
+  .meters-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .meter { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .meter-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .meter-name { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.05em; }
+  .meter-val { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text); }
+  .meter-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .meter-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+  .meter-fill.cpu  { background: linear-gradient(90deg, #4f8ef7, #7c6af7); }
+  .meter-fill.mem  { background: linear-gradient(90deg, #3ecf8e, #2dd4bf); }
+  .meter-fill.disk { background: linear-gradient(90deg, #f5c842, #f59e0b); }
+  .meter-fill.high { background: linear-gradient(90deg, var(--red), #ff6b35); }
+
+  .parallel-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .parallel-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .parallel-num { font-family: var(--font-mono); font-size: 22px; font-weight: 700; color: var(--green); }
+  .parallel-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  .log-container {
+    background: #080a0f;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    height: 220px;
+    overflow-y: auto;
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.7;
+  }
+
+  .log-line { color: #8a9bc8; }
+  .log-line.success { color: var(--green); }
+  .log-line.error   { color: var(--red); }
+  .log-line.info    { color: var(--accent); }
+  .log-line.warn    { color: var(--yellow); }
+
+  .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .history-table th { text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+  .history-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); color: var(--text); font-family: var(--font-mono); }
+  .history-table tr:last-child td { border-bottom: none; }
+  .history-table tr:hover td { background: var(--surface2); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .badge-ok  { background: rgba(62,207,142,0.15); color: var(--green); }
+  .badge-err { background: rgba(247,111,111,0.15); color: var(--red); }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .step-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: rgba(79,142,247,0.12);
+    border: 1px solid rgba(79,142,247,0.3);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .spinner {
+    width: 8px; height: 8px;
+    border: 2px solid transparent;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { border-right: none; border-bottom: 1px solid var(--border); }
+    .stats-grid { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <header>
+    <div class="logo">⚡ SES Scraper</div>
+    <div class="status-badge" id="statusBadge">
+      <span class="dot"></span>
+      <span id="statusText">停止中</span>
+    </div>
+    <div id="stepChip" style="display:none" class="step-chip">
+      <div class="spinner"></div>
+      <span id="stepLabel">実行中</span>
+    </div>
+    <div class="header-right">
+      <div class="time-display" id="clock"></div>
+      <div style="font-size:11px;color:var(--muted);margin-left:12px;" title="あなたのセッションID">🔑 <span id="sidDisplay">-</span></div>
+    </div>
+  </header>
+
+  <!-- SMTP設定モーダル -->
+  <div id="smtpModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:420px;max-width:95vw;">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px;">⚙ メール通知設定（SMTP）</div>
+      <div style="display:grid;gap:10px;">
+        <div>
+          <label style="font-size:12px;color:var(--muted);">SMTPサーバー</label>
+          <input id="smtpHost" type="text" value="smtp.gmail.com" style="width:100%;padding:7px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);">ポート</label>
+          <input id="smtpPort" type="number" value="587" style="width:100%;padding:7px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);">送信元メールアドレス</label>
+          <input id="smtpUser" type="email" placeholder="your@gmail.com" style="width:100%;padding:7px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);">パスワード（Gmailはアプリパスワード）</label>
+          <input id="smtpPass" type="password" placeholder="••••••••••••••••" style="width:100%;padding:7px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);">テスト送信先</label>
+          <div style="display:flex;gap:6px;">
+            <input id="smtpTestTo" type="email" placeholder="test@example.com" style="flex:1;padding:7px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+            <button class="btn" onclick="testSmtp()" style="font-size:12px;padding:4px 10px;">送信テスト</button>
+          </div>
+          <div id="smtpTestResult" style="font-size:12px;margin-top:4px;"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-primary" style="flex:1;" onclick="saveSmtpConfig()">💾 保存</button>
+        <button class="btn" style="flex:1;" onclick="closeSmtpModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- サイドバー -->
+  <aside>
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between">
+        <span style="display:flex;align-items:center;gap:8px">
+          <span style="display:block;width:3px;height:12px;background:var(--accent);border-radius:2px"></span>
+          案件プロファイル
+        </span>
+        <button onclick="openProfileModal(null)" style="background:var(--accent);border:none;color:white;font-size:10px;font-weight:600;padding:3px 10px;border-radius:5px;cursor:pointer;letter-spacing:.03em">
+          ＋ 新規
+        </button>
+      </div>
+      <div class="profile-list" id="profileList">
+        <div style="color:var(--muted);font-size:12px;">読み込み中...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🕷 スクレイピング＋評価</div>
+      <div class="form-row">
+        <label>最大ページ数（IPROS）</label>
+        <input type="number" id="maxPages" value="5" min="1" max="20">
+      </div>
+      <div class="form-row">
+        <label>検索キーワード（1行1キーワード）
+          <span style="font-size:11px;color:var(--muted);font-weight:normal;">※ プロファイルには保存されません</span>
+        </label>
+        <textarea id="extraKeywords" rows="6"
+          style="width:100%;padding:8px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;box-sizing:border-box;resize:vertical;font-family:inherit;"
+          placeholder="データ入力&#10;事務入力&#10;レセプト入力&#10;医事課&#10;（1行1キーワード）"></textarea>
+        <div style="display:flex;gap:6px;margin-top:4px;">
+          <button class="btn" style="font-size:11px;padding:3px 8px;" onclick="loadProfileKwToMain()">プロファイルKWを参照</button>
+          <button class="btn" style="font-size:11px;padding:3px 8px;" onclick="clearKeywords()">クリア</button>
+          <span id="kwCount" style="font-size:11px;color:var(--muted);line-height:24px;"></span>
+        </div>
+      </div>
+      <div class="form-row" style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+        <input type="checkbox" id="noAi" checked style="width:auto;accent-color:var(--accent);">
+        <label style="margin:0;font-size:12px;cursor:pointer" for="noAi">AIなし（高速・キーワード判定のみ）</label>
+      </div>
+      <div style="margin-top:10px;">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">📡 収集ソース</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="srcIpros" checked style="width:auto;accent-color:var(--accent);">
+            IPROS
+          </label>
+          <input type="hidden" id="srcMetoree">
+          <input type="hidden" id="srcAperza">
+        </div>
+      </div>
+    </div>
+
+    <input type="hidden" id="enableEmail">
+    <input type="hidden" id="notifyEmail">
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="btn btn-primary btn-full" id="btnStart" onclick="startScraping()">▶ スクレイピング開始</button>
+      <button class="btn btn-danger btn-full" id="btnStop" onclick="stopScraping()" disabled>■ 停止</button>
+    </div>
+  </aside>
+
+  <!-- メインコンテンツ -->
+  <main>
+
+    <div class="card fade-in">
+      <div class="card-title">進捗</div>
+      <div class="progress-section">
+        <div class="progress-header">
+          <span class="progress-label" id="progressLabel">待機中</span>
+          <span class="progress-pct" id="progressPct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progressCount">0 / 0 社</span>
+          <span id="progressTime"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="eta-row fade-in">
+      <div class="eta-box">
+        <div class="eta-box-label">経過時間</div>
+        <div class="eta-box-value accent" id="etaElapsed">--:--</div>
+      </div>
+      <div class="eta-box">
+        <div class="eta-box-label">残り想定時間</div>
+        <div class="eta-box-value green" id="etaRemaining">--:--</div>
+      </div>
+      <div class="eta-box">
+        <div class="eta-box-label">完了予定</div>
+        <div class="eta-box-value" id="etaFinish">--:--</div>
+      </div>
+    </div>
+
+    <div class="stats-grid fade-in">
+      <div class="stat-box stat-total">
+        <div class="stat-value" id="statTotal">0</div>
+        <div class="stat-label">解析社数</div>
+      </div>
+      <div class="stat-box stat-excellent">
+        <div class="stat-value" id="statExcellent">0</div>
+        <div class="stat-label">◎ 優先候補</div>
+      </div>
+      <div class="stat-box stat-good">
+        <div class="stat-value" id="statGood">0</div>
+        <div class="stat-label">○ 候補</div>
+      </div>
+      <div class="stat-box stat-error">
+        <div class="stat-value" id="statErrors">0</div>
+        <div class="stat-label">失敗</div>
+      </div>
+    </div>
+
+    <div class="card fade-in">
+      <div class="card-title">VPS リソース</div>
+      <div class="meters-grid">
+        <div class="meter">
+          <div class="meter-header">
+            <span class="meter-name">CPU</span>
+            <span class="meter-val" id="cpuVal">--%</span>
+          </div>
+          <div class="meter-track"><div class="meter-fill cpu" id="cpuFill" style="width:0%"></div></div>
+        </div>
+        <div class="meter">
+          <div class="meter-header">
+            <span class="meter-name">MEMORY</span>
+            <span class="meter-val" id="memVal">-- / -- MB</span>
+          </div>
+          <div class="meter-track"><div class="meter-fill mem" id="memFill" style="width:0%"></div></div>
+        </div>
+        <div class="meter" style="grid-column:1/-1">
+          <div class="meter-header">
+            <span class="meter-name">DISK</span>
+            <span class="meter-val" id="diskVal">-- / -- GB</span>
+          </div>
+          <div class="meter-track"><div class="meter-fill disk" id="diskFill" style="width:0%"></div></div>
+        </div>
+      </div>
+      <div class="parallel-info">
+        <div class="parallel-box">
+          <div class="parallel-num" id="parPlaywright">-</div>
+          <div class="parallel-label">ブラウザ並列数</div>
+        </div>
+        <div class="parallel-box">
+          <div class="parallel-num" id="parCrawl">-</div>
+          <div class="parallel-label">クロール並列数</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="queueBanner" style="display:none;padding:12px 16px;background:#7c3aed22;border:1px solid #7c3aed55;border-radius:8px;color:#a78bfa;font-size:13px;font-weight:600;margin-bottom:8px;"></div>
+
+    <div class="card fade-in">
+      <div class="card-title">実行ログ</div>
+      <div class="log-container" id="logContainer">
+        <div class="log-line">待機中...</div>
+      </div>
+    </div>
+
+    <div class="card fade-in">
+      <div class="card-title">実行履歴</div>
+      <table class="history-table" id="historyTable">
+        <thead>
+          <tr>
+            <th>プロファイル</th>
+            <th>完了時刻</th>
+            <th>解析数</th>
+            <th>◎</th>
+            <th>○</th>
+            <th>所要時間</th>
+            <th>状態</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:16px;">履歴なし</td></tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:16px;">
+        <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px;">📥 出力ファイルダウンロード</div>
+        <div id="fileList" style="display:flex;flex-wrap:wrap;gap:8px;">
+          <span style="color:var(--muted);font-size:13px;">読み込み中...</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card fade-in">
+      <div class="card-title">📋 評価のみ（Excelアップロード）</div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button class="btn" id="tabCleanse" onclick="switchMode('cleanse')" style="flex:1;background:var(--accent);color:#fff;">📂 Excelクレンジング</button>
+        <button class="btn" id="tabGoogle" onclick="switchMode('google')" style="flex:1;background:var(--surface2);color:var(--fg);">🔍 Google検索</button>
+      </div>
+
+      <div id="panelCleanse">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Excelファイル選択</label>
+          <input type="file" id="cleanseFile" accept=".xlsx,.xls,.csv"
+            style="font-size:13px;padding:6px;width:100%;box-sizing:border-box;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;"
+            onchange="uploadExcel(this)">
+        </div>
+        <div id="colMapping" style="display:none;background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">📋 列マッピング確認</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div>
+              <label style="font-size:12px;color:var(--muted);">URL列</label>
+              <select id="urlColSelect" style="width:100%;padding:6px;font-size:13px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;"></select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--muted);">会社名列（任意）</label>
+              <select id="nameColSelect" style="width:100%;padding:6px;font-size:13px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;"></select>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);" id="previewUrls"></div>
+          <div style="font-size:12px;color:var(--green);margin-top:4px;" id="uploadSummary"></div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">プロファイル</label>
+          <select id="cleanseProfile" style="width:100%;padding:8px;font-size:14px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;"></select>
+        </div>
+        <button class="btn btn-primary btn-full" id="btnCleanse" onclick="startCleanse()" disabled>▶ クレンジング実行</button>
+      </div>
+
+      <div id="panelGoogle" style="display:none;">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">検索クエリ（改行区切り）</label>
+          <textarea id="googleQueries" rows="4"
+            style="width:100%;padding:8px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;box-sizing:border-box;resize:vertical;"
+            placeholder="機械設計&#10;治具設計&#10;生産設備"></textarea>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">プロファイルのKWを自動で入れることもできます →
+            <button class="btn" style="font-size:12px;padding:2px 8px;" onclick="loadProfileKw()">KW読み込み</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">サフィックス自動付加</label>
+            <input id="googleSuffix" type="text" value="会社 企業" style="width:100%;padding:8px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;box-sizing:border-box;">
+          </div>
+          <div>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">1KWあたりページ数</label>
+            <input id="googleMaxPages" type="number" value="3" min="1" max="10" style="width:100%;padding:8px;font-size:13px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">プロファイル</label>
+          <select id="googleProfile" style="width:100%;padding:8px;font-size:14px;background:var(--surface2);color:var(--fg);border:1px solid var(--border);border-radius:6px;"></select>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="startGoogle()">🔍 Google検索 → スコアリング実行</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// どこからアクセスしても同じ画面を共有する固定セッション
+const SESSION_ID = 'default';
+
+let selectedProfile = 'ses';
+let evtSource = null;
+let sysTimer  = null;
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleString('ja-JP', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+async function loadProfiles() {
+  const res  = await fetch('/api/profiles');
+  const list = await res.json();
+  const el   = document.getElementById('profileList');
+
+  if (!list.length) {
+    el.innerHTML = '<div style="color:var(--red);font-size:12px;">YAMLが見つかりません</div>';
+    return;
+  }
+
+  el.innerHTML = list.map(p => {
+    const isSel = p.slug === selectedProfile;
+    const desc  = (p.description||'').slice(0,38) + ((p.description||'').length>38?'...':'');
+    return `<div style="position:relative;margin-bottom:6px">
+      <button class="profile-btn ${isSel?'selected':''}"
+              onclick="selectProfile('${p.slug}', this)"
+              style="padding-right:56px">
+        <span class="profile-btn-name">${p.name}</span>
+        <span class="profile-btn-desc">${desc}</span>
+        <span class="profile-btn-meta">評価軸 ${p.axes_count}軸 / 検索KW ${p.keywords.length}個</span>
+      </button>
+      <button onclick="openProfileModal('${p.slug}')"
+        style="position:absolute;right:8px;top:50%;transform:translateY(-50%);
+               background:var(--surface2);border:1px solid var(--border);
+               color:var(--muted);font-size:10px;padding:3px 8px;
+               border-radius:5px;cursor:pointer;z-index:1">編集</button>
+    </div>`;
+  }).join('');
+
+  syncProfileSelects(list);
+}
+
+function selectProfile(slug, el) {
+  selectedProfile = slug;
+  document.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+async function updateSystem() {
+  try {
+    const res = await fetch('/api/system');
+    const s   = await res.json();
+    document.getElementById('cpuVal').textContent  = s.cpu_percent + '%';
+    document.getElementById('memVal').textContent  = s.mem_used_mb + ' / ' + s.mem_total_mb + ' MB';
+    document.getElementById('diskVal').textContent = s.disk_used_gb + ' / ' + s.disk_total_gb + ' GB';
+    setMeter('cpuFill',  s.cpu_percent,  'cpu');
+    setMeter('memFill',  s.mem_percent,  'mem');
+    setMeter('diskFill', s.disk_percent, 'disk');
+    document.getElementById('parPlaywright').textContent = s.playwright_parallel;
+    document.getElementById('parCrawl').textContent      = s.crawl_parallel;
+  } catch(e) {}
+}
+
+function setMeter(id, pct, type) {
+  const el = document.getElementById(id);
+  el.style.width = pct + '%';
+  el.className = 'meter-fill ' + (pct > 85 ? 'high' : type);
+}
+
+function fmtSec(s) {
+  if (!s && s !== 0) return '--:--';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+}
+
+function addMinutes(sec) {
+  if (!sec) return '--:--';
+  const d = new Date(Date.now() + sec * 1000);
+  return d.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+}
+
+function startSSE() {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource('/api/events?sid=' + SESSION_ID);
+  evtSource.onmessage = e => {
+    const d = JSON.parse(e.data);
+    updateUI(d);
+  };
+}
+
+function updateUI(d) {
+  const pct = d.percent || 0;
+  document.getElementById('progressFill').style.width  = pct + '%';
+  document.getElementById('progressPct').textContent   = pct + '%';
+
+  const queueBanner = document.getElementById('queueBanner');
+  if (d.queue_position > 0) {
+    if (queueBanner) {
+      queueBanner.style.display = '';
+      queueBanner.textContent = `⏳ キュー待ち中: あなたの前に ${d.queue_position} 件が実行中です。しばらくお待ちください。`;
+    }
+  } else {
+    if (queueBanner) queueBanner.style.display = 'none';
+  }
+
+  document.getElementById('progressLabel').textContent = d.step_label || '待機中';
+  document.getElementById('progressCount').textContent = d.done + ' / ' + d.total + ' 社';
+  document.getElementById('etaElapsed').textContent   = fmtSec(d.elapsed_sec);
+  document.getElementById('etaRemaining').textContent = fmtSec(d.eta_sec);
+  document.getElementById('etaFinish').textContent    = addMinutes(d.eta_sec);
+  document.getElementById('statTotal').textContent     = d.total     || 0;
+  document.getElementById('statExcellent').textContent = d.excellent || 0;
+  document.getElementById('statGood').textContent      = d.good      || 0;
+  document.getElementById('statErrors').textContent    = d.errors    || 0;
+
+  const badge = document.getElementById('statusBadge');
+  const chip  = document.getElementById('stepChip');
+  if (d.is_running) {
+    badge.className = 'status-badge running';
+    document.getElementById('statusText').textContent = d.current_profile
+      ? d.current_profile.toUpperCase() + ' 実行中'
+      : '実行中';
+    chip.style.display = 'flex';
+    document.getElementById('stepLabel').textContent = d.step_label || '実行中';
+  } else {
+    badge.className = 'status-badge';
+    document.getElementById('statusText').textContent = '停止中';
+    chip.style.display = 'none';
+  }
+
+  document.getElementById('btnStart').disabled = d.is_running;
+  document.getElementById('btnStop').disabled  = !d.is_running;
+
+  if (d.new_logs && d.new_logs.length) appendLogs(d.new_logs);
+}
+
+function appendLogs(lines) {
+  const el = document.getElementById('logContainer');
+  lines.forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'log-line' +
+      (line.includes('✅') || line.includes('完了') ? ' success' : '') +
+      (line.includes('❌') || line.includes('エラー') ? ' error' : '') +
+      (line.includes('[INFO]') ? ' info' : '') +
+      (line.includes('警告') || line.includes('⚠') ? ' warn' : '');
+    div.textContent = line;
+    el.appendChild(div);
+  });
+  el.scrollTop = el.scrollHeight;
+  while (el.children.length > 500) el.removeChild(el.firstChild);
+}
+
+// ── 履歴更新 ─────────────────────────────────────────────────────
+// 修正: runs が空でも files は必ず描画する
+async function updateHistory() {
+  try {
+    const res  = await fetch('/api/history?sid=' + SESSION_ID);
+    const data = await res.json();
+    const tbody = document.getElementById('historyBody');
+
+    // 実行履歴（runs がある場合のみ描画）
+    if (data.runs && data.runs.length) {
+      tbody.innerHTML = data.runs.map(r => `
+        <tr>
+          <td>${r.profile}</td>
+          <td>${r.finished_at}</td>
+          <td>${r.total}</td>
+          <td style="color:var(--green)">${r.excellent}</td>
+          <td style="color:var(--accent)">${r.good}</td>
+          <td>${fmtSec(r.elapsed)}</td>
+          <td><span class="badge ${r.status === '完了' ? 'badge-ok' : 'badge-err'}">${r.status}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    // ファイルリスト更新（runs の有無に関わらず常に実行）
+    const fl = document.getElementById('fileList');
+    if (data.files && data.files.length) {
+      fl.innerHTML = data.files.map(f => `
+        <a href="/api/download/${encodeURIComponent(f.filename)}"
+           download="${f.filename}"
+           style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--fg);text-decoration:none;cursor:pointer;"
+           title="${f.created_at}  ${f.size_kb}KB">
+          📥 ${f.filename}
+          <span style="color:var(--muted);font-size:11px;">${f.size_kb}KB</span>
+        </a>
+      `).join('');
+    } else {
+      fl.innerHTML = '<span style="color:var(--muted);font-size:13px;">ファイルなし</span>';
+    }
+  } catch(e) {}
+}
+
+let uploadedFilePath = null;
+let allColumns = [];
+
+function switchMode(mode) {
+  document.getElementById('panelCleanse').style.display = mode === 'cleanse' ? '' : 'none';
+  document.getElementById('panelGoogle').style.display  = mode === 'google'  ? '' : 'none';
+  document.getElementById('tabCleanse').style.background = mode === 'cleanse' ? 'var(--accent)' : 'var(--surface2)';
+  document.getElementById('tabCleanse').style.color = mode === 'cleanse' ? '#fff' : 'var(--fg)';
+  document.getElementById('tabGoogle').style.background  = mode === 'google'  ? 'var(--accent)' : 'var(--surface2)';
+  document.getElementById('tabGoogle').style.color  = mode === 'google'  ? '#fff' : 'var(--fg)';
+}
+
+async function uploadExcel(input) {
+  if (!input.files[0]) return;
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+
+  document.getElementById('uploadSummary').textContent = 'アップロード中...';
+  document.getElementById('colMapping').style.display = '';
+
+  try {
+    const res  = await fetch('/api/upload-excel', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+
+    uploadedFilePath = data.saved_path;
+    allColumns = data.columns;
+
+    const urlSel  = document.getElementById('urlColSelect');
+    const nameSel = document.getElementById('nameColSelect');
+    urlSel.innerHTML  = data.columns.map(c =>
+      `<option value="${c}" ${c === data.url_col_guess ? 'selected' : ''}>${c}</option>`).join('');
+    nameSel.innerHTML = `<option value="">（なし）</option>` + data.columns.map(c =>
+      `<option value="${c}" ${c === data.name_col_guess ? 'selected' : ''}>${c}</option>`).join('');
+
+    document.getElementById('previewUrls').textContent =
+      'URLプレビュー: ' + (data.preview_urls.slice(0,3).join(' / ') || 'なし');
+    document.getElementById('uploadSummary').textContent =
+      `✅ ${data.total_rows}行読み込み完了 | URL列推定: "${data.url_col_guess || '不明'}"`;
+
+    document.getElementById('btnCleanse').disabled = false;
+  } catch(e) {
+    document.getElementById('uploadSummary').textContent = 'エラー: ' + e;
+  }
+}
+
+async function startCleanse() {
+  if (!uploadedFilePath) { alert('ファイルをアップロードしてください'); return; }
+  const urlCol  = document.getElementById('urlColSelect').value;
+  const nameCol = document.getElementById('nameColSelect').value;
+  const profile = document.getElementById('cleanseProfile').value;
+
+  const res = await fetch('/api/start-cleanse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sid: SESSION_ID, saved_path: uploadedFilePath, url_col: urlCol, name_col: nameCol, profile }),
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  startSSE();
+}
+
+function loadProfileKw() {
+  const sel = document.getElementById('googleProfile');
+  const slug = sel.value;
+  if (!slug) return;
+  fetch('/api/profiles/' + slug).then(r => r.json()).then(data => {
+    const kws = (data.keywords_search || []).join('\n');
+    document.getElementById('googleQueries').value = kws;
+  });
+}
+
+async function startGoogle() {
+  const raw     = document.getElementById('googleQueries').value.trim();
+  const queries = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!queries.length) { alert('検索クエリを入力してください'); return; }
+  const profile  = document.getElementById('googleProfile').value;
+  const suffix   = document.getElementById('googleSuffix').value;
+  const maxPages = parseInt(document.getElementById('googleMaxPages').value) || 3;
+
+  const res = await fetch('/api/start-google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile, queries, max_pages: maxPages, suffix }),
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  startSSE();
+}
+
+function syncProfileSelects(profiles) {
+  ['cleanseProfile', 'googleProfile'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = profiles.map(p =>
+      `<option value="${p.slug}">${p.name}</option>`).join('');
+  });
+}
+
+async function openSmtpModal() {
+  const modal = document.getElementById('smtpModal');
+  modal.style.display = 'flex';
+  try {
+    const res  = await fetch('/api/smtp-config');
+    const data = await res.json();
+    if (data.host) document.getElementById('smtpHost').value = data.host;
+    if (data.port) document.getElementById('smtpPort').value = data.port;
+    if (data.user) document.getElementById('smtpUser').value = data.user;
+  } catch(e) {}
+}
+
+function closeSmtpModal() {
+  document.getElementById('smtpModal').style.display = 'none';
+}
+
+async function saveSmtpConfig() {
+  const body = {
+    host:     document.getElementById('smtpHost').value,
+    port:     parseInt(document.getElementById('smtpPort').value),
+    user:     document.getElementById('smtpUser').value,
+    password: document.getElementById('smtpPass').value,
+    from:     document.getElementById('smtpUser').value,
+  };
+  const res = await fetch('/api/smtp-config', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (data.status === 'saved') {
+    alert('✅ 保存しました');
+    closeSmtpModal();
+  }
+}
+
+async function testSmtp() {
+  const to = document.getElementById('smtpTestTo').value;
+  if (!to) { alert('送信先を入力してください'); return; }
+  const res  = document.getElementById('smtpTestResult');
+  res.textContent = '送信中...';
+  try {
+    const r    = await fetch('/api/smtp-test', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({to}),
+    });
+    const data = await r.json();
+    res.textContent = data.status === 'ok' ? '✅ 送信成功' : '❌ 送信失敗';
+    res.style.color = data.status === 'ok' ? 'var(--green)' : 'var(--danger)';
+  } catch(e) {
+    res.textContent = '❌ エラー: ' + e;
+  }
+}
+
+function loadProfileKwToMain() {
+  if (!selectedProfile) { alert('プロファイルを選択してください'); return; }
+  fetch('/api/profiles/' + selectedProfile).then(r => r.json()).then(data => {
+    const kws = (data.keywords_search || []).join('\n');
+    const ta  = document.getElementById('extraKeywords');
+    ta.value  = kws;
+    updateKwCount();
+  });
+}
+
+function clearKeywords() {
+  document.getElementById('extraKeywords').value = '';
+  updateKwCount();
+}
+
+function updateKwCount() {
+  const kws = document.getElementById('extraKeywords').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  document.getElementById('kwCount').textContent = kws.length ? `${kws.length}件` : '';
+}
+
+function toggleEmailSettings() {
+  const show = document.getElementById('enableEmail').checked;
+  document.getElementById('emailSettings').style.display = show ? '' : 'none';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const ta = document.getElementById('extraKeywords');
+  if (ta) ta.addEventListener('input', updateKwCount);
+});
+
+async function startScraping() {
+  const keywords = document.getElementById('extraKeywords').value
+    .split(/\n/).map(s => s.trim()).filter(Boolean);
+  const maxPages = parseInt(document.getElementById('maxPages').value) || 5;
+  const noAi     = document.getElementById('noAi').checked;
+
+  const sources = [];
+  if (document.getElementById('srcIpros').checked)   sources.push('ipros');
+  if (document.getElementById('srcMetoree').checked) sources.push('metoree');
+  if (document.getElementById('srcAperza').checked)  sources.push('aperza');
+  if (!sources.length) { alert('収集ソースを1つ以上選択してください'); return; }
+
+  document.getElementById('logContainer').innerHTML = '';
+  document.getElementById('progressFill').style.width = '0%';
+
+  const notifyEmail = document.getElementById('enableEmail').checked
+    ? document.getElementById('notifyEmail').value.trim() : '';
+
+  const body = {
+    sid:          SESSION_ID,
+    profile:      selectedProfile,
+    keywords:     keywords,
+    max_pages:    maxPages,
+    no_ai:        noAi,
+    sources:      sources,
+    notify_email: notifyEmail,
+  };
+
+  const res = await fetch('/api/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    alert(err.error || '開始に失敗しました');
+  }
+}
+
+async function stopScraping() {
+  if (!confirm('スクレイピングを停止しますか？')) return;
+  await fetch('/api/stop', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({sid: SESSION_ID}) });
+}
+
+async function init() {
+  const sidEl = document.getElementById('sidDisplay');
+  if (sidEl) sidEl.textContent = SESSION_ID.slice(-6);
+
+  await loadProfiles();
+  startSSE();
+  updateSystem();
+  updateHistory();
+  sysTimer = setInterval(updateSystem, 5000);
+  setInterval(updateHistory, 10000);
+}
+
+init();
+</script>
+
+<!-- プロファイル作成・編集 モーダル -->
+<div id="profileModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);overflow-y:auto;padding:20px">
+  <div style="max-width:680px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">
+
+    <div style="background:var(--surface2);padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:14px;font-weight:600" id="modalTitle">新規プロファイル作成</div>
+      <button onclick="closeProfileModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">×</button>
+    </div>
+
+    <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">案件名 *</label>
+          <input type="text" id="pf_name" placeholder="例: 物流・倉庫 外部委託先" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">スラッグ（ファイル名）* 英数字・_のみ</label>
+          <input type="text" id="pf_slug" placeholder="例: logistics" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:monospace;font-size:13px;outline:none">
+        </div>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">説明</label>
+        <input type="text" id="pf_desc" placeholder="例: 物流・倉庫設備の設計を外注している会社" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none">
+      </div>
+
+      <div>
+        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">IPROSの検索キーワード（カンマ区切り）</label>
+        <input type="text" id="pf_search_kws" placeholder="例: 物流設備, 倉庫設計, 自動倉庫" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">◎ 優先候補（点以上）</label>
+          <input type="number" id="pf_th_exc" value="60" min="1" max="100" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">○ 候補（点以上）</label>
+          <input type="number" id="pf_th_gd" value="40" min="1" max="100" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none">
+        </div>
+      </div>
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase">評価軸</div>
+          <div style="font-size:11px;color:var(--muted)" id="axesTotalLabel">合計: 0点</div>
+        </div>
+        <div id="axesList" style="display:flex;flex-direction:column;gap:8px"></div>
+        <button onclick="addAxis()" style="margin-top:10px;width:100%;padding:8px;background:var(--surface2);border:1px dashed var(--border);border-radius:6px;color:var(--muted);font-size:12px;cursor:pointer">
+          ＋ 評価軸を追加
+        </button>
+      </div>
+    </div>
+
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px">
+      <button onclick="closeProfileModal()" style="padding:8px 20px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;cursor:pointer">キャンセル</button>
+      <button onclick="saveProfile()" style="padding:8px 24px;background:var(--accent);border:none;border-radius:6px;color:white;font-size:13px;font-weight:600;cursor:pointer">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let editingSlug = null;
+let axisCount   = 0;
+
+async function openProfileModal(slug) {
+  editingSlug = slug;
+  axisCount   = 0;
+  document.getElementById('axesList').innerHTML = '';
+
+  if (slug) {
+    document.getElementById('modalTitle').textContent = 'プロファイル編集';
+    document.getElementById('pf_slug').disabled = true;
+
+    const res  = await fetch('/api/profiles/' + slug);
+    const data = await res.json();
+
+    document.getElementById('pf_name').value       = data.name || '';
+    document.getElementById('pf_slug').value       = slug;
+    document.getElementById('pf_desc').value       = data.description || '';
+    document.getElementById('pf_search_kws').value = (data.keywords_search||[]).join(', ');
+    document.getElementById('pf_th_exc').value     = (data.thresholds||{}).excellent || 60;
+    document.getElementById('pf_th_gd').value      = (data.thresholds||{}).good      || 40;
+
+    (data.scoring_axes||[]).forEach(ax => addAxis(ax));
+  } else {
+    document.getElementById('modalTitle').textContent = '新規プロファイル作成';
+    document.getElementById('pf_slug').disabled = false;
+    document.getElementById('pf_name').value       = '';
+    document.getElementById('pf_slug').value       = '';
+    document.getElementById('pf_desc').value       = '';
+    document.getElementById('pf_search_kws').value = '';
+    document.getElementById('pf_th_exc').value     = 60;
+    document.getElementById('pf_th_gd').value      = 40;
+    addAxis();
+  }
+
+  document.getElementById('profileModal').style.display = 'block';
+  updateAxesTotal();
+}
+
+function closeProfileModal() {
+  document.getElementById('profileModal').style.display = 'none';
+}
+
+function addAxis(data) {
+  const id  = 'axis_' + (axisCount++);
+  const div = document.createElement('div');
+  div.id    = id;
+  div.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;position:relative';
+
+  const name    = (data && data.name)    || '';
+  const points  = (data && data.points)  || 10;
+  const kws     = (data && data.keywords)||[];
+  const kwStr   = Array.isArray(kws) ? kws.join(', ') : kws;
+  const detect  = (data && data.detection) || 'keyword_any';
+
+  div.innerHTML = `
+    <button onclick="removeAxis('${id}')" style="position:absolute;right:8px;top:8px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;line-height:1">×</button>
+    <div style="display:grid;grid-template-columns:1fr 72px;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="display:block;font-size:10px;color:var(--muted);margin-bottom:3px">評価軸名</label>
+        <input type="text" class="ax-name" value="${name}" placeholder="例: 工場・製造ライン保有"
+          oninput="updateAxesTotal()"
+          style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;outline:none">
+      </div>
+      <div>
+        <label style="display:block;font-size:10px;color:var(--muted);margin-bottom:3px">配点</label>
+        <input type="number" class="ax-pts" value="${points}" min="1" max="50"
+          oninput="updateAxesTotal()"
+          style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;outline:none;text-align:center">
+      </div>
+    </div>
+    <div>
+      <label style="display:block;font-size:10px;color:var(--muted);margin-bottom:3px">検出キーワード（カンマ区切り）</label>
+      <input type="text" class="ax-kws" value="${kwStr}" placeholder="例: 工場, 製造ライン, 生産設備, FA"
+        style="width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;outline:none">
+    </div>
+    <input type="hidden" class="ax-detect" value="${detect}">
+  `;
+
+  document.getElementById('axesList').appendChild(div);
+  updateAxesTotal();
+}
+
+function removeAxis(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+  updateAxesTotal();
+}
+
+function updateAxesTotal() {
+  const pts = [...document.querySelectorAll('.ax-pts')]
+    .reduce((sum, el) => sum + (parseInt(el.value)||0), 0);
+  document.getElementById('axesTotalLabel').textContent = '合計: ' + pts + '点';
+}
+
+async function saveProfile() {
+  const name      = document.getElementById('pf_name').value.trim();
+  const slug      = document.getElementById('pf_slug').value.trim();
+  const desc      = document.getElementById('pf_desc').value.trim();
+  const searchKws = document.getElementById('pf_search_kws').value;
+  const thExc     = parseInt(document.getElementById('pf_th_exc').value) || 60;
+  const thGd      = parseInt(document.getElementById('pf_th_gd').value)  || 40;
+
+  if (!name)  { alert('案件名を入力してください'); return; }
+  if (!slug && !editingSlug) { alert('スラッグを入力してください'); return; }
+
+  const axes = [];
+  document.querySelectorAll('#axesList > div').forEach(div => {
+    const axName = div.querySelector('.ax-name').value.trim();
+    const axPts  = parseInt(div.querySelector('.ax-pts').value) || 10;
+    const axKws  = div.querySelector('.ax-kws').value;
+    const axDet  = div.querySelector('.ax-detect').value;
+    if (axName) {
+      axes.push({
+        id:        axName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/__+/g,'_'),
+        name:      axName,
+        points:    axPts,
+        keywords:  axKws.split(',').map(k=>k.trim()).filter(Boolean),
+        detection: axDet,
+      });
+    }
+  });
+
+  if (!axes.length) { alert('評価軸を1つ以上追加してください'); return; }
+
+  const payload = {
+    slug:                slug || editingSlug,
+    name,
+    description:         desc,
+    keywords_search:     searchKws.split(',').map(k=>k.trim()).filter(Boolean),
+    scoring_axes:        axes,
+    threshold_excellent: thExc,
+    threshold_good:      thGd,
+  };
+
+  const url    = editingSlug ? '/api/profiles/' + editingSlug : '/api/profiles';
+  const method = editingSlug ? 'PUT' : 'POST';
+
+  const res = await fetch(url, {
+    method,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    alert('エラー: ' + (data.error || '保存に失敗しました'));
+    return;
+  }
+
+  closeProfileModal();
+  selectedProfile = payload.slug;
+  await loadProfiles();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeProfileModal();
+});
+</script>
+</body>
+</html>

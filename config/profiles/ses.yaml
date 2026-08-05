@@ -1,0 +1,168 @@
+name: "SES企業スクリーニング"
+description: "労働者派遣業・SES事業者を識別する。派遣許可番号・派遣商材の多数表記・事業内容・求人シグナルで加点し、受託専業・自社プロダクト主体は減点する。"
+
+keywords_search:
+  - SES
+  - 労働者派遣
+  - システムエンジニアリングサービス
+  - エンジニア派遣
+  - ITエンジニア派遣
+  - 技術者派遣
+  - 人材派遣 IT
+
+scoring_axes:
+  # ── 加点ルール（合計100点）────────────────────────────────────
+
+  - id: dispatch_branding
+    name: "派遣商材を多数表記"
+    points: 25
+    description: "派遣系ワードがサイト全体で多数（min_count回以上）出現する。SES専業ほど露出が多い。"
+    detection: keyword_count       # ★新検出タイプ: ヒット総数が min_count 以上で発火
+    min_count: 5
+    keywords:
+      - 人材派遣
+      - エンジニア派遣
+      - 技術者派遣
+      - ITエンジニア派遣
+      - システムエンジニア派遣
+      - 派遣サービス
+      - 派遣事業
+      - 特定派遣
+      - 一般派遣
+      - 派遣
+
+  - id: dispatch_license
+    name: "派遣許可番号"
+    points: 25
+    description: "派XX-XXXXXXを正規表現で検出。最も確実なSESの証拠。"
+    detection: regex
+    pattern: "派[0-9一二三四五六七八九十百千万]+[-－][0-9一二三四五六七八九十百千万]+"
+
+  - id: ses_explicit
+    name: "SES・システムエンジニアリングサービス明記"
+    points: 20
+    description: "事業内容にSESまたはシステムエンジニアリングサービスの明記"
+    detection: keyword_any
+    keywords:
+      - システムエンジニアリングサービス
+      - SES事業
+      - SESサービス
+      - エンジニアリングサービス
+
+  - id: dispatch_business
+    name: "労働者派遣事業＋許可の併記"
+    points: 10
+    description: "「労働者派遣事業」と「許可」が同一ページに存在（許可番号regexと証拠が重複するため配点は控えめ）"
+    detection: keyword_all
+    keywords:
+      - 労働者派遣事業
+      - 許可
+
+  - id: engineer_dispatch
+    name: "エンジニア派遣"
+    points: 10
+    description: "事業内容にエンジニア派遣の記載"
+    detection: keyword_any
+    keywords:
+      - エンジニア派遣
+      - 技術者派遣
+      - ITエンジニア派遣
+      - エンジニアの派遣
+
+  - id: client_signals
+    name: "プロジェクト先・クライアント先・取引先"
+    points: 5
+    description: "求人ページや事業紹介にクライアント常駐シグナルが存在"
+    detection: keyword_any
+    keywords:
+      - プロジェクト先
+      - クライアント先
+      - 取引先企業
+      - 常駐先
+      - 客先
+
+  - id: ses_terms
+    name: "マージン・還元率（SES求人の常套句）"
+    points: 5
+    description: "マージンや還元率といったSES業界特有のワード"
+    detection: keyword_any
+    keywords:
+      - マージン
+      - 還元率
+      - 単価
+      - 精算幅
+
+  # ── 減点ルール（画像どおり据え置き）────────────────────────────
+
+  - id: penalty_contract_only
+    name: "受託開発専業ペナルティ"
+    points: -20
+    description: "受託開発専業・受託100%と明記している場合"
+    detection: keyword_any
+    keywords:
+      - 受託開発専業
+      - 受託100%
+      - 受託専門
+      - 自社開発のみ
+
+  - id: penalty_own_product
+    name: "自社プロダクト主体ペナルティ"
+    points: -15
+    description: "自社プロダクトが主事業と明記"
+    detection: keyword_any
+    keywords:
+      - 自社プロダクト
+      - 自社サービス主体
+      - 自社製品開発
+      - パッケージ開発専業
+
+  - id: penalty_prime_no_license
+    name: "プライム案件強調＋派遣許可なしペナルティ"
+    points: -10
+    description: "プライム案件を強調しつつ派遣許可番号がない場合（※「派遣請負なし」の否定はキーワードでは正確に取れないため、肯定語のみを根拠にしている。誤検出の可能性あり）"
+    detection: keyword_any
+    keywords:
+      - プライム案件のみ
+      - 元請けのみ
+      - 二次請けなし
+
+  - id: penalty_sier
+    name: "SIerとして自己定義ペナルティ"
+    points: -10
+    description: "SIerとして自己定義している"
+    detection: keyword_any
+    keywords:
+      - SIerとして
+      - システムインテグレーター専業
+      - 総合システムインテグレーター
+
+score_cap: 100
+score_floor: 0
+
+thresholds:
+  excellent: 80   # 真SES
+  good: 55        # SES主体ハイブリッド
+
+score_labels:
+  - range: [80, 100]
+    label: "真SES"
+  - range: [55, 79]
+    label: "SES主体ハイブリッド"
+  - range: [20, 54]
+    label: "受託・自社寄り"
+  - range: [0, 19]
+    label: "非SES・不明"
+
+notes: |
+  【注意事項】
+  - 最重要シグナルは「派遣許可番号(dispatch_license)」と「派遣商材の多数表記(dispatch_branding)」の2本柱（各25点）。
+  - dispatch_branding は派遣系ワードの“出現回数”で判定する（min_count=5）。回数ベースのため detection: keyword_count を使用。
+  - 「労働者派遣事業＋許可(dispatch_business)」は許可番号regexと証拠が重複するため配点を10点に抑えている。
+  - 「客先常駐」「常駐」「SES」単独は頻出しすぎるためスコアに使わず候補フィルタに留める。
+  - 「技術者派遣」「プライム」は単体では加点せず、他シグナルと組み合わせて判定。
+
+ai_instruction: |
+  SES（システムエンジニアリングサービス）事業者かどうかを評価してください。
+  派遣許可番号の有無と、派遣商材の露出量（多数表記）が最重要です。
+  受託開発専業・自社プロダクト主体の企業は低評価してください。
+  80点以上＝真SES、55〜79点＝SES主体ハイブリッドとして判定してください。

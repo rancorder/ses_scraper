@@ -1,0 +1,4 @@
+cd C:\Users\masube\Desktop\SES_scra_anaraiz
+
+cd /d D:\SES_scra_anaraiz
+python ses_run.py --keyword SES 受託開発 システム開発

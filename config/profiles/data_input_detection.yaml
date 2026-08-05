@@ -1,0 +1,158 @@
+name: "データ入力検知"
+description: "データ入力業務・手作業運用が残る企業を検知する。入力業務シグナル・業務逼迫・アナログ運用を加点し、DX完了・自動化済みを除外する。"
+
+keywords_search:
+  - データ入力
+  - 事務入力
+  - レセプト入力
+  - 医事課
+  - 診療情報管理士
+  - 入力業務
+  - 事務スタッフ
+
+scoring_axes:
+
+  # ── 加点: 入力求人シグナル（weight: 3） ──────────────────────
+  - id: input_jobs
+    name: "入力求人シグナル"
+    points: 30
+    description: "データ入力・事務入力系の求人・業務内容の記載"
+    detection: keyword_any
+    keywords:
+      - データ入力
+      - 事務入力
+      - 医事課
+      - 診療情報管理士
+      - レセプト入力
+      - 伝票入力
+      - 受発注入力
+      - 入力業務
+      - 事務スタッフ募集
+
+  # ── 加点: リスク業務シグナル（weight: 2） ────────────────────
+  - id: risk
+    name: "リスク業務シグナル"
+    points: 20
+    description: "レセプト・診療報酬・請求処理など入力ミスリスクが高い業務"
+    detection: keyword_any
+    keywords:
+      - レセプト
+      - 診療報酬
+      - 請求処理
+      - 会計処理
+      - 検査記録
+      - 品質管理
+      - トレーサビリティ
+      - 健診データ
+      - 医療記録
+
+  # ── 加点: 属人化・依存シグナル（weight: 2） ──────────────────
+  - id: dependency
+    name: "属人化・担当者依存シグナル"
+    points: 20
+    description: "属人化・ベテラン依存・引継ぎ困難などの記載"
+    detection: keyword_any
+    keywords:
+      - 属人化
+      - 担当者依存
+      - 引継ぎ
+      - ベテラン
+      - 少人数
+      - 専任担当
+      - 特定担当
+
+  # ── 加点: 繁忙・逼迫シグナル（weight: 1） ────────────────────
+  - id: busy
+    name: "繁忙・業務過多シグナル"
+    points: 10
+    description: "繁忙期・残業・人手不足など業務逼迫の記載"
+    detection: keyword_any
+    keywords:
+      - 繁忙期
+      - 月末
+      - 年度末
+      - 残業
+      - 人手不足
+      - 業務過多
+      - 繁忙
+      - 対応追われる
+
+  # ── 加点: アナログ運用シグナル（weight: 1） ──────────────────
+  - id: analog
+    name: "アナログ運用シグナル"
+    points: 10
+    description: "FAX・紙帳票・手書きなどデジタル化が進んでいない運用"
+    detection: keyword_any
+    keywords:
+      - FAX
+      - 紙帳票
+      - 手書き
+      - 郵送
+      - 紙カルテ
+      - 紙ベース
+      - アナログ運用
+
+  # ── 減点: DX完了・自動化済み除外（weight: -999） ─────────────
+  - id: exclude
+    name: "DX完了・自動化済み除外"
+    points: -999
+    description: "DX推進完了・ペーパーレス化済・RPA/AI導入済みは対象外"
+    detection: keyword_any
+    keywords:
+      - DX推進完了
+      - ペーパーレス化済
+      - 自動化済
+      - RPA導入済
+      - AI導入済
+      - 内製化
+      - 完全電子化
+      - システム化完了
+
+score_cap: 100
+score_floor: 0
+
+# ── ボーナスルール ────────────────────────────────────────────────
+bonus_rules:
+  - name: "input_and_busy"
+    description: "データ入力＋繁忙期の組み合わせ"
+    condition:
+      - データ入力
+      - 繁忙期
+    bonus: 2
+
+  - name: "receipt_and_overtime"
+    description: "レセプト＋残業の組み合わせ"
+    condition:
+      - レセプト
+      - 残業
+    bonus: 3
+
+  - name: "analog_and_dependency"
+    description: "FAX＋属人化の組み合わせ"
+    condition:
+      - FAX
+      - 属人化
+    bonus: 2
+
+# ── スコアリングルール ────────────────────────────────────────────
+scoring_rules:
+  min_score: 3
+  high_priority_score: 5
+
+thresholds:
+  excellent: 50   # S判定（score >= 5相当）
+  good: 30        # A判定（score >= 3相当）
+
+score_labels:
+  - range: [50, 100]
+    label: "S（最優先）"
+  - range: [30, 49]
+    label: "A（優先）"
+  - range: [0, 29]
+    label: "B（様子見）"
+
+ai_instruction: |
+  データ入力業務・手作業運用が残る企業を評価してください。
+  入力業務の求人・業務内容・アナログ運用シグナルを重視してください。
+  DX推進完了・ペーパーレス化済・RPA/AI導入済みの企業は除外（-999点）してください。
+  S判定（最優先）＝入力業務＋リスク業務＋逼迫シグナルが複数重なる企業です。
