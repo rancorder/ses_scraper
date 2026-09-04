@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,16 @@ class ScraperRunner:
         output_dir.mkdir(parents=True, exist_ok=True)
         prefix = input_file.stem
 
+        # batch_run.py catches per-batch exceptions and can still exit 0.
+        # Calculate the expected batch count up front so partial output can never be
+        # promoted to COMPLETED by the orchestration layer.
+        from batch_run import read_file
+
+        companies, _, _ = read_file(str(input_file), "企業ホームページURL")
+        if not companies:
+            raise RuntimeError("input contains no valid company URLs")
+        expected_batches = math.ceil(len(companies) / batch_size)
+
         self._run(
             [
                 sys.executable,
@@ -51,8 +62,10 @@ class ScraperRunner:
         )
 
         batch_files = sorted(self.legacy_output_dir.glob(f"*{prefix}*batch*.xlsx"))
-        if not batch_files:
-            raise RuntimeError(f"no batch outputs found for prefix: {prefix}")
+        if len(batch_files) != expected_batches:
+            raise RuntimeError(
+                f"incomplete batch output: expected {expected_batches}, found {len(batch_files)}"
+            )
 
         for source in batch_files:
             destination = output_dir / source.name
