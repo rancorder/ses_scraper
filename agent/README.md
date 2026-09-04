@@ -29,16 +29,34 @@ Optional controls:
 --force       # remove an existing agent lock; only after confirming no job is running
 ```
 
-## Job status CLI
+## Job inspection
 
 ```bash
 python agent/job_status.py --latest
-python agent/job_status.py --job-id JOB-20260905-075344-806093
-python agent/job_status.py --failed
+python agent/job_status.py --job-id JOB-YYYYMMDD-HHMMSS-ffffff
 python agent/job_status.py --failed --limit 3
 ```
 
-`--job-id` reads the live per-job `job.json` first, so it can also show the current state of a job that has not yet reached terminal history. `--latest` and `--failed` read the append-only `work/jobs.jsonl` terminal history.
+`--job-id` reads the per-job `job.json` first, so it can also show the current state of a running job.
+
+## Re-run a prior job
+
+A prior local/no-upload job can be re-run as a brand-new job without modifying the original workspace:
+
+```bash
+python agent/job_rerun.py \
+  --job-id JOB-YYYYMMDD-HHMMSS-ffffff
+```
+
+If the prior job failed before preserving an input file, or if you want to re-run with corrected input data:
+
+```bash
+python agent/job_rerun.py \
+  --job-id JOB-YYYYMMDD-HHMMSS-ffffff \
+  --replacement-file ./webui/uploads/corrected.csv
+```
+
+The re-run always creates a new Job ID and currently runs in local/no-upload mode. This keeps the source job immutable and avoids reusing a potentially broken partial workspace. Drive-mode re-run can be added after Drive OAuth/full E2E is finalized.
 
 ## Requirements
 
@@ -96,8 +114,6 @@ python agent/run_job.py \
 
 tail -5 work/jobs.jsonl
 ls -la work/.agent.lock
-python agent/job_status.py --latest
-python agent/job_status.py --failed --limit 3
 ```
 
 Verified on VPS (2026-09-05):
@@ -107,6 +123,6 @@ Verified on VPS (2026-09-05):
 - lock removed after normal completion
 - existing lock -> immediate `FAILED`, `attempts: 0`
 - nonexistent local file -> immediate `FAILED`, `attempts: 0` (non-retryable preflight failure)
-- retryable evaluation failure with `--retries 2` -> 3 attempts then terminal `FAILED`
+- invalid company input with `--retries 2` -> three attempts, final `FAILED`
 
 After a normal completed run, `work/.agent.lock` should not exist. The terminal job record should be appended to `work/jobs.jsonl`.
