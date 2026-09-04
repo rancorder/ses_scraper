@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -59,7 +60,7 @@ class DriveClient:
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return files[0]
 
-    def upload_file(self, local_file: Path, folder_id: str) -> None:
+    def upload_file(self, local_file: Path, folder_id: str) -> str:
         self._run(
             "copyto",
             str(local_file),
@@ -67,6 +68,18 @@ class DriveClient:
             "--drive-root-folder-id",
             folder_id,
         )
-
-    def folder_url(self, folder_id: str) -> str:
+        raw = self._run(
+            "lsjson",
+            f"{self.remote}:{local_file.name}",
+            "--drive-root-folder-id",
+            folder_id,
+        )
+        try:
+            items = json.loads(raw)
+            item = items[0] if isinstance(items, list) and items else items
+            file_id = item.get("ID") if isinstance(item, dict) else None
+        except json.JSONDecodeError:
+            file_id = None
+        if file_id:
+            return f"https://drive.google.com/file/d/{file_id}/view"
         return f"https://drive.google.com/drive/folders/{folder_id}"
