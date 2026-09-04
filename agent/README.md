@@ -25,7 +25,7 @@ python agent/run_job.py \
 Optional controls:
 
 ```bash
---retries 2   # retry failed download/evaluation/upload actions
+--retries 2   # retry failed Drive/download, evaluation/merge, and upload actions
 --force       # remove an existing agent lock; only after confirming no job is running
 ```
 
@@ -56,6 +56,23 @@ The runner calculates the expected number of batches before execution. If `batch
 
 If a lock remains after an abnormal shutdown, first verify that no Agent job is running. Only then use `--force` to remove the stale lock.
 
+## Retry semantics
+
+Retries are intentionally applied only to operations that can plausibly recover on a second attempt:
+
+- Drive download/export
+- evaluation + merge execution
+- Drive upload
+
+Preflight/validation failures are not retried. Examples include:
+
+- local input file does not exist
+- invalid profile
+- invalid URL / unsupported input format
+- lock already exists
+
+For these failures, `attempts` may remain `0` because the retryable execution stage was never entered. This is expected behavior and avoids waiting on deterministic configuration errors.
+
 ## Phase 2 verification
 
 ```bash
@@ -69,5 +86,13 @@ python agent/run_job.py \
 tail -5 work/jobs.jsonl
 ls -la work/.agent.lock
 ```
+
+Verified on VPS (2026-09-05):
+
+- normal 10-company `t2_lab` run -> `COMPLETED`, `attempts: 1`
+- terminal record appended to `work/jobs.jsonl`
+- lock removed after normal completion
+- existing lock -> immediate `FAILED`, `attempts: 0`
+- nonexistent local file -> immediate `FAILED`, `attempts: 0` (non-retryable preflight failure)
 
 After a normal completed run, `work/.agent.lock` should not exist. The terminal job record should be appended to `work/jobs.jsonl`.
