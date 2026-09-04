@@ -1,0 +1,4 @@
+work_dir: /opt/ses_scraper/SES_scra_anaraiz/work
+drive_remote: gdrive
+default_output_folder_url: ""
+batch_size: 200
