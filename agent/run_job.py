@@ -24,15 +24,22 @@ def load_settings() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Drive URL driven SES screening job")
-    parser.add_argument("--drive-url", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--drive-url")
+    source.add_argument("--local-file")
     parser.add_argument("--profile", required=True)
     parser.add_argument("--output-folder-url", default=None)
+    parser.add_argument(
+        "--no-upload",
+        action="store_true",
+        help="skip Drive upload and keep the merged result in the job workspace",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
     output_folder_url = args.output_folder_url or settings.get("default_output_folder_url")
-    if not output_folder_url:
-        parser.error("--output-folder-url is required until default_output_folder_url is configured")
+    if not args.no_upload and not output_folder_url:
+        parser.error("--output-folder-url is required unless --no-upload is used")
 
     work_root = Path(settings.get("work_dir") or (_REPO_ROOT / "work"))
     orchestrator = Orchestrator(
@@ -43,8 +50,10 @@ def main() -> int:
     )
     result = orchestrator.run(
         drive_url=args.drive_url,
+        local_file=args.local_file,
         profile=args.profile,
         output_folder_url=output_folder_url,
+        upload=not args.no_upload,
     )
 
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
