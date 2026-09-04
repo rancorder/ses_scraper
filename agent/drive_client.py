@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -31,27 +30,43 @@ class DriveClient:
         if resource.resource_type == "folder":
             target = destination / "source"
             target.mkdir(parents=True, exist_ok=True)
-            self._run("copy", f"{self.remote}:{{{resource.resource_id}}}", str(target), "--drive-export-formats", "xlsx,csv")
+            self._run(
+                "copy",
+                f"{self.remote}:",
+                str(target),
+                "--drive-root-folder-id",
+                resource.resource_id,
+                "--drive-export-formats",
+                "xlsx,csv",
+            )
             return target
 
-        # rclone supports Drive's root-folder-id/file-id syntax through backend commands inconsistently
-        # across versions. We therefore resolve the object path by ID first, then copy/export it.
-        metadata_raw = self._run("backend", "copyid", f"{self.remote}:", resource.resource_id, str(destination), "--json")
-        try:
-            metadata = json.loads(metadata_raw) if metadata_raw else {}
-        except json.JSONDecodeError:
-            metadata = {}
-
-        files = [p for p in destination.iterdir() if p.is_file()]
+        before = {p.name for p in destination.iterdir() if p.is_file()}
+        self._run(
+            "backend",
+            "copyid",
+            f"{self.remote}:",
+            resource.resource_id,
+            f"{destination}/",
+            "--drive-export-formats",
+            "xlsx,csv",
+        )
+        files = [p for p in destination.iterdir() if p.is_file() and p.name not in before]
+        if not files:
+            files = [p for p in destination.iterdir() if p.is_file()]
         if not files:
             raise RuntimeError(f"Drive resource {resource.resource_id} was not downloaded")
-        if len(files) > 1:
-            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return files[0]
 
     def upload_file(self, local_file: Path, folder_id: str) -> None:
-        self._run("copyto", str(local_file), f"{self.remote}:{{{folder_id}}}/{local_file.name}")
+        self._run(
+            "copyto",
+            str(local_file),
+            f"{self.remote}:{local_file.name}",
+            "--drive-root-folder-id",
+            folder_id,
+        )
 
-    def file_url(self, folder_id: str, file_name: str) -> str:
-        # Public/shareable URL generation depends on Drive permissions; return a stable folder pointer.
+    def folder_url(self, folder_id: str) -> str:
         return f"https://drive.google.com/drive/folders/{folder_id}"
