@@ -40,7 +40,20 @@ class Orchestrator:
         self.output_manager = OutputManager(self.drive)
         self.batch_size = batch_size
 
-    def run(self, drive_url: str, profile: str, output_folder_url: str) -> JobResult:
+    def run(
+        self,
+        *,
+        profile: str,
+        drive_url: str | None = None,
+        local_file: str | None = None,
+        output_folder_url: str | None = None,
+        upload: bool = True,
+    ) -> JobResult:
+        if bool(drive_url) == bool(local_file):
+            raise ValueError("exactly one of drive_url or local_file must be provided")
+        if upload and not output_folder_url:
+            raise ValueError("output_folder_url is required when upload is enabled")
+
         now = datetime.now()
         job_id = f"JOB-{now:%Y%m%d-%H%M%S}"
         workspace = self.work_root / job_id
@@ -61,17 +74,26 @@ class Orchestrator:
 
         persist()
         try:
-            # Fail fast before any long-running work.
             load_profile(profile)
 
-            source = resolve_drive_url(drive_url)
-            output_resource = resolve_drive_url(output_folder_url)
-            if output_resource.resource_type != "folder":
-                raise ValueError("output-folder-url must be a Google Drive folder URL")
+            output_resource = None
+            if upload:
+                output_resource = resolve_drive_url(output_folder_url or "")
+                if output_resource.resource_type != "folder":
+                    raise ValueError("output-folder-url must be a Google Drive folder URL")
 
-            result.status = "DOWNLOADING"
+            result.status = "DOWNLOADING" if drive_url else "READY"
             persist()
-            downloaded = self.drive.download(source, input_dir)
+
+            if drive_url:
+                source = resolve_drive_url(drive_url)
+                downloaded = self.drive.download(source, input_dir)
+            else:
+                source_path = Path(local_file or "").expanduser().resolve()
+                if not source_path.exists() or not source_path.is_file():
+                    raise FileNotFoundError(f"local input file not found: {source_path}")
+                downloaded = input_dir / source_path.name
+                shutil.copy2(source_path, downloaded)
 
             if downloaded.is_dir():
                 candidates = sorted(
@@ -102,13 +124,15 @@ class Orchestrator:
                 batch_size=self.batch_size,
             )
             result.output_file = str(merged)
-            result.status = "UPLOADING"
-            persist()
 
-            result.output_drive_url = self.output_manager.upload(
-                merged,
-                output_resource.resource_id,
-            )
+            if upload:
+                result.status = "UPLOADING"
+                persist()
+                result.output_drive_url = self.output_manager.upload(
+                    merged,
+                    output_resource.resource_id,
+                )
+
             result.status = "COMPLETED"
             persist()
             return result
