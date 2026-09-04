@@ -29,6 +29,17 @@ Optional controls:
 --force       # remove an existing agent lock; only after confirming no job is running
 ```
 
+## Job status CLI
+
+```bash
+python agent/job_status.py --latest
+python agent/job_status.py --job-id JOB-20260905-075344-806093
+python agent/job_status.py --failed
+python agent/job_status.py --failed --limit 3
+```
+
+`--job-id` reads the live per-job `job.json` first, so it can also show the current state of a job that has not yet reached terminal history. `--latest` and `--failed` read the append-only `work/jobs.jsonl` terminal history.
+
 ## Requirements
 
 - Existing project virtualenv and Python dependencies
@@ -85,6 +96,8 @@ python agent/run_job.py \
 
 tail -5 work/jobs.jsonl
 ls -la work/.agent.lock
+python agent/job_status.py --latest
+python agent/job_status.py --failed --limit 3
 ```
 
 Verified on VPS (2026-09-05):
@@ -94,5 +107,6 @@ Verified on VPS (2026-09-05):
 - lock removed after normal completion
 - existing lock -> immediate `FAILED`, `attempts: 0`
 - nonexistent local file -> immediate `FAILED`, `attempts: 0` (non-retryable preflight failure)
+- retryable evaluation failure with `--retries 2` -> 3 attempts then terminal `FAILED`
 
 After a normal completed run, `work/.agent.lock` should not exist. The terminal job record should be appended to `work/jobs.jsonl`.
