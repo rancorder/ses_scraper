@@ -34,6 +34,17 @@ def main() -> int:
         action="store_true",
         help="skip Drive upload and keep the merged result in the job workspace",
     )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=None,
+        help="retry count for Drive/download, evaluation/merge, and upload",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="remove an existing agent lock; use only after confirming no job is running",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
@@ -41,12 +52,18 @@ def main() -> int:
     if not args.no_upload and not output_folder_url:
         parser.error("--output-folder-url is required unless --no-upload is used")
 
+    retries = args.retries if args.retries is not None else int(settings.get("retries", 1))
+    if retries < 0:
+        parser.error("--retries must be 0 or greater")
+
     work_root = Path(settings.get("work_dir") or (_REPO_ROOT / "work"))
     orchestrator = Orchestrator(
         repo_root=_REPO_ROOT,
         work_root=work_root,
         drive_remote=settings.get("drive_remote", "gdrive"),
         batch_size=int(settings.get("batch_size", 200)),
+        retries=retries,
+        retry_delay_seconds=int(settings.get("retry_delay_seconds", 5)),
     )
     result = orchestrator.run(
         drive_url=args.drive_url,
@@ -54,6 +71,7 @@ def main() -> int:
         profile=args.profile,
         output_folder_url=output_folder_url,
         upload=not args.no_upload,
+        force=args.force,
     )
 
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
