@@ -60,6 +60,45 @@ class DriveClient:
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return files[0]
 
+    def _find_uploaded_file_id(self, file_name: str, folder_id: str) -> str | None:
+        """Resolve an uploaded file ID by listing the target folder.
+
+        Listing the folder is more stable across rclone versions than calling
+        lsjson against a single file path, whose output shape can vary.
+        """
+        raw = self._run(
+            "lsjson",
+            f"{self.remote}:",
+            "--drive-root-folder-id",
+            folder_id,
+            "--files-only",
+        )
+        try:
+            items = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("failed to parse rclone lsjson output after upload") from exc
+
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            return None
+
+        matches = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("Name") or item.get("Path")
+            if name == file_name:
+                matches.append(item)
+
+        if not matches:
+            return None
+
+        # Prefer the newest matching item if duplicate names somehow exist.
+        matches.sort(key=lambda item: str(item.get("ModTime") or ""), reverse=True)
+        file_id = matches[0].get("ID")
+        return str(file_id) if file_id else None
+
     def upload_file(self, local_file: Path, folder_id: str) -> str:
         self._run(
             "copyto",
@@ -68,18 +107,11 @@ class DriveClient:
             "--drive-root-folder-id",
             folder_id,
         )
-        raw = self._run(
-            "lsjson",
-            f"{self.remote}:{local_file.name}",
-            "--drive-root-folder-id",
-            folder_id,
-        )
-        try:
-            items = json.loads(raw)
-            item = items[0] if isinstance(items, list) and items else items
-            file_id = item.get("ID") if isinstance(item, dict) else None
-        except json.JSONDecodeError:
-            file_id = None
-        if file_id:
-            return f"https://drive.google.com/file/d/{file_id}/view"
-        return f"https://drive.google.com/drive/folders/{folder_id}"
+
+        file_id = self._find_uploaded_file_id(local_file.name, folder_id)
+        if not file_id:
+            raise RuntimeError(
+                f"uploaded file was not found in Drive folder after copy: {local_file.name}"
+            )
+
+        return f"https://drive.google.com/file/d/{file_id}/view"
