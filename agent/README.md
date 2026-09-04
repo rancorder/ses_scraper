@@ -55,3 +55,19 @@ The runner calculates the expected number of batches before execution. If `batch
 - Default retry policy: 1 retry with 5 seconds delay (`config/agent.yaml`)
 
 If a lock remains after an abnormal shutdown, first verify that no Agent job is running. Only then use `--force` to remove the stale lock.
+
+## Phase 2 verification
+
+```bash
+python -m py_compile agent/*.py
+python agent/run_job.py --help
+python agent/run_job.py \
+  --local-file "./webui/uploads/t2_test_10rows.csv" \
+  --profile t2_lab \
+  --no-upload
+
+tail -5 work/jobs.jsonl
+ls -la work/.agent.lock
+```
+
+After a normal completed run, `work/.agent.lock` should not exist. The terminal job record should be appended to `work/jobs.jsonl`.
