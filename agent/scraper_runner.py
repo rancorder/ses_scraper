@@ -9,6 +9,10 @@ from datetime import datetime
 from pathlib import Path
 
 
+class ControlledStop(RuntimeError):
+    """Intentional interruption used to validate checkpoint/resume behavior."""
+
+
 class ScraperRunner:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -46,6 +50,7 @@ class ScraperRunner:
         log_file: Path,
         batch_size: int = 200,
         checkpoint_size: int = 1,
+        stop_after: int | None = None,
     ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         prefix = input_file.stem
@@ -61,6 +66,9 @@ class ScraperRunner:
         expected_batches = math.ceil(total / checkpoint_size)
         checkpoint_file = output_dir / "checkpoint.json"
 
+        if stop_after is not None and stop_after < 1:
+            raise ValueError("stop_after must be 1 or greater")
+
         completed_batches = 0
         for batch_num in range(1, expected_batches + 1):
             start = (batch_num - 1) * checkpoint_size
@@ -70,6 +78,7 @@ class ScraperRunner:
             # A completed checkpoint is durable. After VPS/Python restart, skip it.
             if destination.exists() and destination.stat().st_size > 0:
                 completed_batches += 1
+                completed_count = min(start + count, total)
                 self._atomic_json(
                     checkpoint_file,
                     {
@@ -77,12 +86,28 @@ class ScraperRunner:
                         "total_companies": total,
                         "checkpoint_size": checkpoint_size,
                         "completed_batches": completed_batches,
-                        "completed_count": min(completed_batches * checkpoint_size, total),
-                        "next_index": min(start + count, total),
+                        "completed_count": completed_count,
+                        "next_index": completed_count,
                         "last_company": companies[start + count - 1].get("name", ""),
                         "updated_at": datetime.now().isoformat(timespec="seconds"),
                     },
                 )
+                if stop_after is not None and completed_count >= stop_after:
+                    self._atomic_json(
+                        checkpoint_file,
+                        {
+                            "status": "INTERRUPTED",
+                            "total_companies": total,
+                            "checkpoint_size": checkpoint_size,
+                            "completed_batches": completed_batches,
+                            "completed_count": completed_count,
+                            "next_index": completed_count,
+                            "last_company": companies[start + count - 1].get("name", ""),
+                            "reason": f"controlled stop after {stop_after} companies",
+                            "updated_at": datetime.now().isoformat(timespec="seconds"),
+                        },
+                    )
+                    raise ControlledStop(f"controlled stop after {completed_count} companies")
                 continue
 
             legacy_target = self.legacy_output_dir / destination.name
@@ -122,6 +147,7 @@ class ScraperRunner:
                 shutil.move(str(produced[0]), str(destination))
                 completed_batches += 1
 
+            completed_count = min(start + count, total)
             self._atomic_json(
                 checkpoint_file,
                 {
@@ -129,12 +155,29 @@ class ScraperRunner:
                     "total_companies": total,
                     "checkpoint_size": checkpoint_size,
                     "completed_batches": completed_batches,
-                    "completed_count": min(start + count, total),
-                    "next_index": min(start + count, total),
+                    "completed_count": completed_count,
+                    "next_index": completed_count,
                     "last_company": companies[start + count - 1].get("name", ""),
                     "updated_at": datetime.now().isoformat(timespec="seconds"),
                 },
             )
+
+            if stop_after is not None and completed_count >= stop_after:
+                self._atomic_json(
+                    checkpoint_file,
+                    {
+                        "status": "INTERRUPTED",
+                        "total_companies": total,
+                        "checkpoint_size": checkpoint_size,
+                        "completed_batches": completed_batches,
+                        "completed_count": completed_count,
+                        "next_index": completed_count,
+                        "last_company": companies[start + count - 1].get("name", ""),
+                        "reason": f"controlled stop after {stop_after} companies",
+                        "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    },
+                )
+                raise ControlledStop(f"controlled stop after {completed_count} companies")
 
         batch_files = sorted(output_dir.glob(f"{prefix}_batch*.xlsx"))
         if len(batch_files) != expected_batches:
