@@ -14,7 +14,7 @@ from profile_loader import load_profile
 from .drive_client import DriveClient
 from .input_resolver import resolve_drive_url
 from .output_manager import OutputManager
-from .scraper_runner import ScraperRunner
+from .scraper_runner import ControlledStop, ScraperRunner
 
 T = TypeVar("T")
 
@@ -104,6 +104,8 @@ class Orchestrator:
             result.attempts = attempt
             try:
                 return action()
+            except ControlledStop:
+                raise
             except Exception as exc:
                 last_exc = exc
                 if attempt > self.retries:
@@ -127,11 +129,14 @@ class Orchestrator:
         output_folder_url: str | None = None,
         upload: bool = True,
         force: bool = False,
+        stop_after: int | None = None,
     ) -> JobResult:
         if bool(drive_url) == bool(local_file):
             raise ValueError("exactly one of drive_url or local_file must be provided")
         if upload and not output_folder_url:
             raise ValueError("output_folder_url is required when upload is enabled")
+        if stop_after is not None and stop_after < 1:
+            raise ValueError("stop_after must be 1 or greater")
 
         now = datetime.now()
         job_id = f"JOB-{now:%Y%m%d-%H%M%S-%f}"
@@ -218,6 +223,7 @@ class Orchestrator:
                         log_file=log_file,
                         batch_size=self.batch_size,
                         checkpoint_size=self.checkpoint_size,
+                        stop_after=stop_after,
                     ),
                     result,
                 )
@@ -236,6 +242,9 @@ class Orchestrator:
 
                 result.status = "COMPLETED"
                 result.error = None
+        except ControlledStop as exc:
+            result.status = "INTERRUPTED"
+            result.error = str(exc)
         except Exception as exc:
             result.status = "FAILED"
             result.error = str(exc)
