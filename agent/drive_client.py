@@ -25,6 +25,54 @@ class DriveClient:
             raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "rclone failed")
         return proc.stdout.strip()
 
+    def list_folder_sources(self, folder_id: str) -> list[dict[str, str]]:
+        """Return supported source spreadsheets directly under a Drive folder.
+
+        Generated merged result files are deliberately excluded so the same Drive
+        folder can be reused as both input and output without re-enqueueing results.
+        """
+        raw = self._run(
+            "lsjson",
+            f"{self.remote}:",
+            "--drive-root-folder-id",
+            folder_id,
+            "--files-only",
+        )
+        try:
+            items = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("failed to parse rclone lsjson output for Drive folder") from exc
+
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            return []
+
+        supported = {".csv", ".xlsx", ".xls"}
+        sources: list[dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("Name") or item.get("Path") or "").strip()
+            file_id = str(item.get("ID") or "").strip()
+            if not name or not file_id:
+                continue
+            if Path(name).suffix.lower() not in supported:
+                continue
+            if "_統合結果" in Path(name).stem:
+                continue
+            sources.append(
+                {
+                    "id": file_id,
+                    "name": name,
+                    "mod_time": str(item.get("ModTime") or ""),
+                }
+            )
+
+        # Oldest first is deterministic and matches the default FIFO expectation.
+        sources.sort(key=lambda item: (item["mod_time"], item["name"]))
+        return sources
+
     def download(self, resource: DriveResource, destination: Path) -> Path:
         destination.mkdir(parents=True, exist_ok=True)
 
