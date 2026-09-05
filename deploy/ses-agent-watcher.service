@@ -1,0 +1,11 @@
+[Unit]
+Description=SES Company Analyzer Drive Folder Watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/ses_scraper/SES_scra_anaraiz
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/ses_scraper/SES_scra_anaraiz/venv/bin/python agent/folder_watcher.py
