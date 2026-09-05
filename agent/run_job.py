@@ -62,6 +62,7 @@ def main() -> int:
         work_root=work_root,
         drive_remote=settings.get("drive_remote", "gdrive"),
         batch_size=int(settings.get("batch_size", 200)),
+        checkpoint_size=int(settings.get("checkpoint_size", 1)),
         retries=retries,
         retry_delay_seconds=int(settings.get("retry_delay_seconds", 5)),
     )
