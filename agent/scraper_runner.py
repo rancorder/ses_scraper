@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import math
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -26,6 +28,16 @@ class ScraperRunner:
         if proc.returncode != 0:
             raise RuntimeError(f"command failed ({proc.returncode}): {' '.join(args)}")
 
+    @staticmethod
+    def _atomic_json(path: Path, payload: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+
     def execute(
         self,
         input_file: Path,
@@ -33,43 +45,102 @@ class ScraperRunner:
         output_dir: Path,
         log_file: Path,
         batch_size: int = 200,
+        checkpoint_size: int = 1,
     ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         prefix = input_file.stem
 
-        # batch_run.py catches per-batch exceptions and can still exit 0.
-        # Calculate the expected batch count up front so partial output can never be
-        # promoted to COMPLETED by the orchestration layer.
         from batch_run import read_file
 
         companies, _, _ = read_file(str(input_file), "企業ホームページURL")
         if not companies:
             raise RuntimeError("input contains no valid company URLs")
-        expected_batches = math.ceil(len(companies) / batch_size)
 
-        self._run(
-            [
-                sys.executable,
-                "batch_run.py",
-                "--file",
-                str(input_file),
-                "--profile",
-                profile,
-                "--batch",
-                str(batch_size),
-            ],
-            log_file,
-        )
+        checkpoint_size = max(1, checkpoint_size)
+        total = len(companies)
+        expected_batches = math.ceil(total / checkpoint_size)
+        checkpoint_file = output_dir / "checkpoint.json"
 
-        batch_files = sorted(self.legacy_output_dir.glob(f"*{prefix}*batch*.xlsx"))
-        if len(batch_files) != expected_batches:
-            raise RuntimeError(
-                f"incomplete batch output: expected {expected_batches}, found {len(batch_files)}"
+        completed_batches = 0
+        for batch_num in range(1, expected_batches + 1):
+            start = (batch_num - 1) * checkpoint_size
+            count = min(checkpoint_size, total - start)
+            destination = output_dir / f"{prefix}_batch{batch_num:03d}.xlsx"
+
+            # A completed checkpoint is durable. After VPS/Python restart, skip it.
+            if destination.exists() and destination.stat().st_size > 0:
+                completed_batches += 1
+                self._atomic_json(
+                    checkpoint_file,
+                    {
+                        "status": "RUNNING",
+                        "total_companies": total,
+                        "checkpoint_size": checkpoint_size,
+                        "completed_batches": completed_batches,
+                        "completed_count": min(completed_batches * checkpoint_size, total),
+                        "next_index": min(start + count, total),
+                        "last_company": companies[start + count - 1].get("name", ""),
+                        "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    },
+                )
+                continue
+
+            legacy_target = self.legacy_output_dir / destination.name
+            if legacy_target.exists():
+                # Previous subprocess may have finished just before a crash.
+                shutil.move(str(legacy_target), str(destination))
+                completed_batches += 1
+            else:
+                self._run(
+                    [
+                        sys.executable,
+                        "agent/checkpoint_batch.py",
+                        "--file",
+                        str(input_file),
+                        "--profile",
+                        profile,
+                        "--start",
+                        str(start),
+                        "--count",
+                        str(count),
+                        "--output-prefix",
+                        prefix,
+                        "--batch-num",
+                        str(batch_num),
+                    ],
+                    log_file,
+                )
+
+                produced = sorted(
+                    self.legacy_output_dir.glob(f"*{prefix}_batch{batch_num:03d}.xlsx")
+                )
+                if len(produced) != 1:
+                    raise RuntimeError(
+                        f"checkpoint output missing/ambiguous for batch {batch_num}: "
+                        f"found {len(produced)}"
+                    )
+                shutil.move(str(produced[0]), str(destination))
+                completed_batches += 1
+
+            self._atomic_json(
+                checkpoint_file,
+                {
+                    "status": "RUNNING",
+                    "total_companies": total,
+                    "checkpoint_size": checkpoint_size,
+                    "completed_batches": completed_batches,
+                    "completed_count": min(start + count, total),
+                    "next_index": min(start + count, total),
+                    "last_company": companies[start + count - 1].get("name", ""),
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                },
             )
 
-        for source in batch_files:
-            destination = output_dir / source.name
-            shutil.move(str(source), str(destination))
+        batch_files = sorted(output_dir.glob(f"{prefix}_batch*.xlsx"))
+        if len(batch_files) != expected_batches:
+            raise RuntimeError(
+                f"incomplete checkpoint output: expected {expected_batches}, found {len(batch_files)}"
+            )
 
         merged_name = f"{profile}_{prefix}_統合結果.xlsx"
         self._run(
@@ -89,4 +160,19 @@ class ScraperRunner:
         merged = output_dir / merged_name
         if not merged.exists() or merged.stat().st_size == 0:
             raise RuntimeError(f"merged output was not created: {merged}")
+
+        self._atomic_json(
+            checkpoint_file,
+            {
+                "status": "COMPLETED",
+                "total_companies": total,
+                "checkpoint_size": checkpoint_size,
+                "completed_batches": expected_batches,
+                "completed_count": total,
+                "next_index": total,
+                "last_company": companies[-1].get("name", ""),
+                "merged_output": str(merged),
+                "updated_at": datetime.now().isoformat(timespec="seconds"),
+            },
+        )
         return merged
