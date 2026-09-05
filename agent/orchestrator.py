@@ -130,6 +130,7 @@ class Orchestrator:
         upload: bool = True,
         force: bool = False,
         stop_after: int | None = None,
+        job_id: str | None = None,
     ) -> JobResult:
         if bool(drive_url) == bool(local_file):
             raise ValueError("exactly one of drive_url or local_file must be provided")
@@ -139,8 +140,12 @@ class Orchestrator:
             raise ValueError("stop_after must be 1 or greater")
 
         now = datetime.now()
-        job_id = f"JOB-{now:%Y%m%d-%H%M%S-%f}"
+        job_id = job_id or f"JOB-{now:%Y%m%d-%H%M%S-%f}"
         workspace = self.work_root / job_id
+        if workspace.exists() and any(workspace.iterdir()):
+            raise RuntimeError(
+                f"job workspace already exists: {job_id}; use resume_job.py for recovery"
+            )
         input_dir = workspace / "input"
         output_dir = workspace / "output"
         log_file = workspace / "logs" / "execution.log"
