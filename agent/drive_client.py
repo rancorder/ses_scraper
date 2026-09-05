@@ -28,8 +28,8 @@ class DriveClient:
     def list_folder_sources(self, folder_id: str) -> list[dict[str, str]]:
         """Return supported source spreadsheets directly under a Drive folder.
 
-        Generated merged result files are deliberately excluded so the same Drive
-        folder can be reused as both input and output without re-enqueueing results.
+        CSV/XLS/XLSX and native Google Sheets are accepted. Generated merged result
+        files are excluded so the same Drive folder can be reused for input/output.
         """
         raw = self._run(
             "lsjson",
@@ -49,15 +49,23 @@ class DriveClient:
             return []
 
         supported = {".csv", ".xlsx", ".xls"}
+        google_sheet_mimes = {
+            "application/vnd.google-apps.spreadsheet",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "text/csv",
+        }
         sources: list[dict[str, str]] = []
         for item in items:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("Name") or item.get("Path") or "").strip()
             file_id = str(item.get("ID") or "").strip()
+            mime_type = str(item.get("MimeType") or item.get("Mime") or "").strip()
             if not name or not file_id:
                 continue
-            if Path(name).suffix.lower() not in supported:
+            suffix = Path(name).suffix.lower()
+            if suffix not in supported and mime_type not in google_sheet_mimes:
                 continue
             if "_統合結果" in Path(name).stem:
                 continue
@@ -66,6 +74,7 @@ class DriveClient:
                     "id": file_id,
                     "name": name,
                     "mod_time": str(item.get("ModTime") or ""),
+                    "mime_type": mime_type,
                 }
             )
 
@@ -109,11 +118,6 @@ class DriveClient:
         return files[0]
 
     def _find_uploaded_file_id(self, file_name: str, folder_id: str) -> str | None:
-        """Resolve an uploaded file ID by listing the target folder.
-
-        Listing the folder is more stable across rclone versions than calling
-        lsjson against a single file path, whose output shape can vary.
-        """
         raw = self._run(
             "lsjson",
             f"{self.remote}:",
@@ -142,7 +146,6 @@ class DriveClient:
         if not matches:
             return None
 
-        # Prefer the newest matching item if duplicate names somehow exist.
         matches.sort(key=lambda item: str(item.get("ModTime") or ""), reverse=True)
         file_id = matches[0].get("ID")
         return str(file_id) if file_id else None
