@@ -45,6 +45,12 @@ def main() -> int:
         action="store_true",
         help="remove an existing agent lock; use only after confirming no job is running",
     )
+    parser.add_argument(
+        "--stop-after",
+        type=int,
+        default=None,
+        help="test-only: intentionally interrupt after N completed companies",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
@@ -55,6 +61,8 @@ def main() -> int:
     retries = args.retries if args.retries is not None else int(settings.get("retries", 1))
     if retries < 0:
         parser.error("--retries must be 0 or greater")
+    if args.stop_after is not None and args.stop_after < 1:
+        parser.error("--stop-after must be 1 or greater")
 
     work_root = Path(settings.get("work_dir") or (_REPO_ROOT / "work"))
     orchestrator = Orchestrator(
@@ -73,6 +81,7 @@ def main() -> int:
         output_folder_url=output_folder_url,
         upload=not args.no_upload,
         force=args.force,
+        stop_after=args.stop_after,
     )
 
     print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
