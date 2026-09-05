@@ -18,9 +18,6 @@ from .scraper_runner import ScraperRunner
 
 T = TypeVar("T")
 
-SUPPORTED_INPUT_SUFFIXES = {".xlsx", ".xls", ".csv"}
-GENERATED_OUTPUT_MARKERS = ("_統合結果",)
-
 
 @dataclass
 class JobResult:
@@ -87,6 +84,7 @@ class Orchestrator:
         work_root: Path,
         drive_remote: str = "gdrive",
         batch_size: int = 200,
+        checkpoint_size: int = 1,
         retries: int = 1,
         retry_delay_seconds: int = 5,
     ):
@@ -96,6 +94,7 @@ class Orchestrator:
         self.runner = ScraperRunner(repo_root)
         self.output_manager = OutputManager(self.drive)
         self.batch_size = batch_size
+        self.checkpoint_size = max(1, checkpoint_size)
         self.retries = max(0, retries)
         self.retry_delay_seconds = max(0, retry_delay_seconds)
 
@@ -118,12 +117,6 @@ class Orchestrator:
         history_file.parent.mkdir(parents=True, exist_ok=True)
         with history_file.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(asdict(result), ensure_ascii=False) + "\n")
-
-    @staticmethod
-    def _is_folder_input_candidate(path: Path) -> bool:
-        if path.suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
-            return False
-        return not any(marker in path.stem for marker in GENERATED_OUTPUT_MARKERS)
 
     def run(
         self,
@@ -191,25 +184,23 @@ class Orchestrator:
                     result.attempts = 1
 
                 if downloaded.is_dir():
-                    supported = sorted(
+                    candidates = sorted(
                         [
                             p
                             for p in downloaded.rglob("*")
-                            if p.is_file() and p.suffix.lower() in SUPPORTED_INPUT_SUFFIXES
+                            if p.suffix.lower() in {".xlsx", ".xls", ".csv"}
+                            and "_統合結果" not in p.stem
                         ],
                         key=lambda p: p.name,
                     )
-                    candidates = [p for p in supported if self._is_folder_input_candidate(p)]
                     if len(candidates) != 1:
-                        names = ", ".join(p.name for p in candidates) or "none"
                         raise RuntimeError(
-                            "folder input must contain exactly one source spreadsheet after "
-                            "excluding generated *_統合結果 files; "
-                            f"found {len(candidates)}: {names}"
+                            "folder input must contain exactly one supported source spreadsheet; "
+                            f"found {len(candidates)}"
                         )
                     downloaded = candidates[0]
 
-                if downloaded.suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
+                if downloaded.suffix.lower() not in {".xlsx", ".xls", ".csv"}:
                     raise RuntimeError(f"unsupported input format: {downloaded.suffix}")
 
                 job_input = input_dir / f"{job_id}_{downloaded.name}"
@@ -226,6 +217,7 @@ class Orchestrator:
                         output_dir=output_dir,
                         log_file=log_file,
                         batch_size=self.batch_size,
+                        checkpoint_size=self.checkpoint_size,
                     ),
                     result,
                 )
