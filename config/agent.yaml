@@ -6,3 +6,10 @@ checkpoint_size: 1
 retries: 1
 retry_delay_seconds: 5
 worker_poll_seconds: 5
+
+folder_watch:
+  enabled: true
+  folder_url: "https://drive.google.com/drive/folders/10QYSDQE1Mz6jp8xnL9l5ZayrFdiCnl2h"
+  output_folder_url: "https://drive.google.com/drive/folders/10QYSDQE1Mz6jp8xnL9l5ZayrFdiCnl2h"
+  profile: t2_lab
+  priority: normal
