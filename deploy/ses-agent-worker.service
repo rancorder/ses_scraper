@@ -1,0 +1,18 @@
+[Unit]
+Description=SES Company Analyzer Queue Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ses_scraper/SES_scra_anaraiz
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/ses_scraper/SES_scra_anaraiz/venv/bin/python agent/queue_worker.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import yaml
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from agent.orchestrator import Orchestrator
+
+
+def load_settings() -> dict:
+    path = _REPO_ROOT / "config" / "agent.yaml"
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Drive URL driven SES screening job")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--drive-url")
+    source.add_argument("--local-file")
+    parser.add_argument("--profile", required=True)
+    parser.add_argument("--output-folder-url", default=None)
+    parser.add_argument(
+        "--no-upload",
+        action="store_true",
+        help="skip Drive upload and keep the merged result in the job workspace",
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=None,
+        help="retry count for Drive/download, evaluation/merge, and upload",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="remove an existing agent lock; use only after confirming no job is running",
+    )
+    parser.add_argument(
+        "--stop-after",
+        type=int,
+        default=None,
+        help="test-only: intentionally interrupt after N completed companies",
+    )
+    args = parser.parse_args()
+
+    settings = load_settings()
+    output_folder_url = args.output_folder_url or settings.get("default_output_folder_url")
+    if not args.no_upload and not output_folder_url:
+        parser.error("--output-folder-url is required unless --no-upload is used")
+
+    retries = args.retries if args.retries is not None else int(settings.get("retries", 1))
+    if retries < 0:
+        parser.error("--retries must be 0 or greater")
+    if args.stop_after is not None and args.stop_after < 1:
+        parser.error("--stop-after must be 1 or greater")
+
+    work_root = Path(settings.get("work_dir") or (_REPO_ROOT / "work"))
+    orchestrator = Orchestrator(
+        repo_root=_REPO_ROOT,
+        work_root=work_root,
+        drive_remote=settings.get("drive_remote", "gdrive"),
+        batch_size=int(settings.get("batch_size", 200)),
+        checkpoint_size=int(settings.get("checkpoint_size", 1)),
+        retries=retries,
+        retry_delay_seconds=int(settings.get("retry_delay_seconds", 5)),
+    )
+    result = orchestrator.run(
+        drive_url=args.drive_url,
+        local_file=args.local_file,
+        profile=args.profile,
+        output_folder_url=output_folder_url,
+        upload=not args.no_upload,
+        force=args.force,
+        stop_after=args.stop_after,
+    )
+
+    print(json.dumps(result.__dict__, ensure_ascii=False, indent=2))
+    return 0 if result.status == "COMPLETED" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
