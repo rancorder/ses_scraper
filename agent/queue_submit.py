@@ -37,6 +37,39 @@ def queue_filename(priority: str, created_at: str, job_id: str) -> str:
     return f"{rank}_{stamp}_{job_id}.json"
 
 
+def enqueue_source(
+    *,
+    pending_dir: Path,
+    source: dict[str, str],
+    profile: str,
+    output_folder_url: str,
+    priority: str = "normal",
+) -> dict:
+    now = datetime.now()
+    job_id = f"JOB-{now:%Y%m%d-%H%M%S-%f}"
+    created_at = now.isoformat(timespec="microseconds")
+    item = {
+        "job_id": job_id,
+        "status": "QUEUED",
+        "priority": priority,
+        "created_at": created_at,
+        "started_at": None,
+        "finished_at": None,
+        "profile": profile,
+        "source_name": source.get("name", ""),
+        "source_file_id": source["id"],
+        "source_mod_time": source.get("mod_time", ""),
+        "source_mime_type": source.get("mime_type", ""),
+        "drive_url": f"https://drive.google.com/file/d/{source['id']}/view",
+        "output_folder_url": output_folder_url,
+        "result": None,
+        "error": None,
+    }
+    path = pending_dir / queue_filename(priority, created_at, job_id)
+    atomic_json(path, item)
+    return {"job_id": job_id, "source_name": item["source_name"], "queue_file": str(path)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit SES screening list(s) to the persistent queue")
     parser.add_argument("--drive-url", required=True, help="Drive file or folder URL")
@@ -60,35 +93,22 @@ def main() -> int:
             output_folder_url = args.drive_url
         sources = drive.list_folder_sources(resource.resource_id)
         if not sources:
-            raise RuntimeError("Drive folder contains no supported source CSV/XLS/XLSX files")
+            raise RuntimeError("Drive folder contains no supported source CSV/XLS/XLSX/Google Sheets files")
     else:
         if not output_folder_url:
             raise RuntimeError("--output-folder-url is required when queueing a Drive file URL")
-        sources = [{"id": resource.resource_id, "name": resource.resource_id, "mod_time": ""}]
+        sources = [{"id": resource.resource_id, "name": resource.resource_id, "mod_time": "", "mime_type": ""}]
 
-    submitted = []
-    for source in sources:
-        now = datetime.now()
-        job_id = f"JOB-{now:%Y%m%d-%H%M%S-%f}"
-        created_at = now.isoformat(timespec="microseconds")
-        item = {
-            "job_id": job_id,
-            "status": "QUEUED",
-            "priority": args.priority,
-            "created_at": created_at,
-            "started_at": None,
-            "finished_at": None,
-            "profile": args.profile,
-            "source_name": source.get("name", ""),
-            "source_file_id": source["id"],
-            "drive_url": f"https://drive.google.com/file/d/{source['id']}/view",
-            "output_folder_url": output_folder_url,
-            "result": None,
-            "error": None,
-        }
-        path = pending_dir / queue_filename(args.priority, created_at, job_id)
-        atomic_json(path, item)
-        submitted.append({"job_id": job_id, "source_name": item["source_name"], "queue_file": str(path)})
+    submitted = [
+        enqueue_source(
+            pending_dir=pending_dir,
+            source=source,
+            profile=args.profile,
+            output_folder_url=output_folder_url,
+            priority=args.priority,
+        )
+        for source in sources
+    ]
 
     print(json.dumps({"submitted": len(submitted), "items": submitted}, ensure_ascii=False, indent=2))
     return 0
