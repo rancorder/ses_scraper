@@ -112,7 +112,6 @@ def test_exhibition_upcoming_and_recent_are_report_only():
     assert "展示会:EdgeTech+ 2025" in recent.detail
     assert "past-event" in recent.detail
 
-    # 展示会EvidenceはR2正式100点へは加算しない。
     assert result.total_score == 0
     assert result.judgment == "C"
 
@@ -240,6 +239,57 @@ def test_shop_opening_is_not_exhibition_evidence():
     result = ProfileScorer(profile).score("Example株式会社", "https://example.com", pages)
     assert _report(result, "exhibition_upcoming").earned is False
     assert _report(result, "exhibition_recent").earned is False
+
+
+def test_exhibition_list_page_is_not_used_as_event_detail():
+    profile = load_profile("t2_lab")
+    past = (date.today() - timedelta(days=30)).isoformat()
+    pages = [
+        _page(
+            "https://example.com/news/page/2",
+            f"Example株式会社 {past} その他のお知らせ 展示会 ご来場ありがとうございました 出展",
+            title="お知らせ",
+        )
+    ]
+    result = ProfileScorer(profile).score("Example株式会社", "https://example.com", pages)
+    recent = _report(result, "exhibition_recent")
+    assert recent.earned is False
+    assert "出展実績:" not in recent.detail
+
+
+def test_event_title_is_used_instead_of_body_fragment():
+    profile = load_profile("t2_lab")
+    past = (date.today() - timedelta(days=60)).isoformat()
+    pages = [
+        _page(
+            "https://example.com/news/jpca2026",
+            f"Example株式会社 開催時期：{past} 展示会に出展しました。電動式ズームレンズを展示しました。",
+            title="電子機器トータルソリューション展2026 出展報告 - Example株式会社",
+        )
+    ]
+    result = ProfileScorer(profile).score("Example株式会社", "https://example.com", pages)
+    recent = _report(result, "exhibition_recent")
+    assert recent.earned is True
+    assert "展示会:電子機器トータルソリューション展2026" in recent.detail
+    assert "ムレンズ" not in recent.detail
+
+
+def test_year_exhibition_page_can_confirm_past_history():
+    profile = load_profile("t2_lab")
+    past = (date.today() - timedelta(days=180)).isoformat()
+    pages = [
+        _page(
+            "https://example.com/jp/technology/event/y2026",
+            f"イリソ電子工業株式会社 {past} に開催された「CES 2026」に出展いたしました。",
+            title="2026年展示会情報｜イリソ電子工業株式会社",
+        )
+    ]
+    result = ProfileScorer(profile).score(
+        "イリソ電子工業株式会社", "https://example.com", pages
+    )
+    recent = _report(result, "exhibition_recent")
+    assert recent.earned is True
+    assert "展示会:CES 2026" in recent.detail
 
 
 def test_contact_department_requires_both_contact_and_department():
