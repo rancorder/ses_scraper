@@ -82,6 +82,64 @@ def test_t2_r2_ai_reference_score_does_not_change_formal_score():
     assert result.judgment == "A"
 
 
+def test_parent_company_site_does_not_score_for_subsidiary():
+    profile = load_profile("t2_lab")
+    today = date.today().isoformat()
+    pages = [
+        _page(
+            "https://www.tel.co.jp/",
+            "東京エレクトロン株式会社 製品情報 装置 電子回路設計 SoC AI技術 "
+            "開発拠点 新製品 発売 " + today,
+            title="東京エレクトロン株式会社",
+        ),
+        _page(
+            "https://www.tel.co.jp/news/event/2025/example.html",
+            "東京エレクトロン株式会社 回路設計 SoC AI技術 開発拠点",
+            title="SEMICON | 東京エレクトロン株式会社",
+        ),
+    ]
+    result = ProfileScorer(profile).score(
+        "東京エレクトロン宮城株式会社",
+        "https://www.tel.co.jp/",
+        pages,
+    )
+
+    assert result.total_score == 0
+    assert result.judgment == "C"
+    assert all(not axis.earned for axis in result.axes)
+    assert all("対象会社スコープ外Evidence除外" in axis.detail for axis in result.axes)
+
+
+def test_parent_site_scores_only_target_company_subpage():
+    profile = load_profile("t2_lab")
+    pages = [
+        _page(
+            "https://www.tel.co.jp/",
+            "東京エレクトロン株式会社 電子回路設計 SoC AI技術 開発拠点",
+            title="東京エレクトロン株式会社",
+        ),
+        _page(
+            "https://www.tel.co.jp/about/locations/tml.html",
+            "東京エレクトロン宮城株式会社 自社製品 装置 開発部",
+            title="東京エレクトロン宮城株式会社 | 企業情報 | 東京エレクトロン株式会社",
+        ),
+    ]
+    result = ProfileScorer(profile).score(
+        "東京エレクトロン宮城株式会社",
+        "https://www.tel.co.jp/",
+        pages,
+    )
+
+    assert result.total_score == 30
+    assert result.judgment == "C"
+    axes = {axis.id: axis for axis in result.axes}
+    assert axes["own_product_manufacturer"].earned is True
+    assert axes["development_department"].earned is True
+    assert axes["circuit_design"].earned is False
+    assert axes["fpga_soc_development"].earned is False
+    assert axes["ai_vision"].earned is False
+
+
 def test_exhibition_upcoming_and_recent_are_report_only():
     profile = load_profile("t2_lab")
     future = (date.today() + timedelta(days=90)).isoformat()
