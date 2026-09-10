@@ -13,6 +13,7 @@ import logging
 import re
 import time
 from collections import defaultdict
+from datetime import date
 from itertools import count
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -228,32 +229,68 @@ def _link_score(url: str, anchor_text: str) -> int:
     return score
 
 
-def _is_archive_pagination(current_url: str, target_url: str, anchor_text: str) -> bool:
-    """ニュース/展示会一覧のページ送り・年別アーカイブを拾う。"""
-    current_lower = current_url.lower()
-    if not any(hint in current_lower for hint in _ARCHIVE_HINTS):
-        return False
+def _page_number(url: str) -> int | None:
+    path = urlparse(url).path.lower().rstrip("/")
+    m = re.search(r"/page/(\d+)$", path)
+    return int(m.group(1)) if m else None
 
+
+def _archive_year(target_url: str, anchor_text: str) -> int | None:
+    """年別アーカイブの年をURLまたはアンカーから取得する。"""
     parsed = urlparse(target_url)
-    target_path = parsed.path.lower()
+    path = parsed.path.lower()
     query = parsed.query.lower()
     anchor = re.sub(r"\s+", "", anchor_text.lower())
 
-    if re.search(r"/page/\d+/?$", target_path):
-        return True
-    if anchor in {">", "»", "next", "次へ", "次のページ"}:
-        return True
-    if re.fullmatch(r"\d{1,3}", anchor):
-        return True
+    for pattern, value in [
+        (r"/(?:y)?(20\d{2})(?:/|$)", path),
+        (r"(?:^|&)(?:year|y)=(20\d{2})(?:&|$)", query),
+        (r"^(20\d{2})年?$", anchor),
+    ]:
+        m = re.search(pattern, value)
+        if m:
+            return int(m.group(1))
+    return None
 
-    # イリソ等の「2026年」「y2026」「?year=2026」型アーカイブにも追従する。
-    if re.fullmatch(r"20\d{2}年?", anchor):
-        return True
-    if re.search(r"/(?:y)?20\d{2}(?:/|$)", target_path):
-        return True
-    if re.search(r"(?:^|&)(?:year|y)=20\d{2}(?:&|$)", query):
-        return True
-    return False
+
+def _archive_navigation_priority(current_url: str, target_url: str, anchor_text: str) -> int:
+    """一覧ページから必要なページ送り/年別だけを優先する。
+
+    WordPress等のページャに表示される 5, 10, 20, 30, 46 といった遠いページを
+    一気にキューへ積むと、直近記事へ到達する前にページ枠を消費する。
+    そのためページ送りは現在ページ+1のみ、年別は今年～2年前のみ許可する。
+    """
+    current_lower = current_url.lower()
+    if not any(hint in current_lower for hint in _ARCHIVE_HINTS):
+        return 0
+
+    anchor = re.sub(r"\s+", "", anchor_text.lower())
+    current_page = _page_number(current_url) or 1
+    target_page = _page_number(target_url)
+    if target_page is not None:
+        return 25 if target_page == current_page + 1 else 0
+
+    # 明示的な「次へ」はURL形式が/page/NでないCMSもあるため許可する。
+    if anchor in {">", "»", "next", "次へ", "次のページ"}:
+        return 25
+
+    year = _archive_year(target_url, anchor_text)
+    if year is not None:
+        current_year = date.today().year
+        if year == current_year:
+            return 90
+        if year == current_year - 1:
+            return 12
+        if year == current_year - 2:
+            return 8
+        return 0
+
+    return 0
+
+
+def _is_archive_pagination(current_url: str, target_url: str, anchor_text: str) -> bool:
+    """互換用。必要な一覧ナビゲーションだけTrueを返す。"""
+    return _archive_navigation_priority(current_url, target_url, anchor_text) > 0
 
 
 def _discover_candidate_links(html: str, current_url: str, site_url: str) -> list[tuple[int, str]]:
@@ -281,9 +318,13 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
         canonical = _canonical_url(full)
         anchor = a.get_text(" ", strip=True)[:120]
         score = _link_score(canonical, anchor)
-        if _is_archive_pagination(current_url, canonical, anchor):
-            # 年別/2ページ目を通常の製品深掘りより優先する。
-            score = max(score, 80)
+        archive_priority = _archive_navigation_priority(current_url, canonical, anchor)
+        if archive_priority:
+            # アーカイブ移動は通常リンクスコアを上書きし、今年→詳細記事→前年の順に進みやすくする。
+            score = archive_priority
+        elif _page_number(canonical) is not None or _archive_year(canonical, anchor) is not None:
+            # 遠いページ番号・古い年別リンクは、URLにnews/eventが含まれていても通常リンクとして拾わない。
+            score = 0
         if score <= 0:
             continue
         if score > found.get(canonical, 0):
