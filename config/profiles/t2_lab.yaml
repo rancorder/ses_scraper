@@ -19,7 +19,7 @@ keywords_search:
   - 組込みLinux
   - 組み込みLinux
   - 画像処理
-  - AI
+  - エッジAI
   - 自社製品
   - 研究開発
   - 開発部門
@@ -41,14 +41,19 @@ scoring_axes:
     keyword_groups:
       -
         - 自社製品
+        - 当社製品
         - 自社開発製品
         - 自社ブランド
         - オリジナル製品
         - 独自製品
         - 製品開発
+        - 商品開発
         - 製品情報
         - 製品一覧
         - 製品ラインアップ
+        - 製品ご案内
+        - 主力製品
+        - 新製品
       -
         - 電子機器
         - 電子デバイス
@@ -61,6 +66,7 @@ scoring_axes:
         - 基板
         - モジュール
         - ロボット
+        - コネクタ
         - 製造
         - 開発・製造
         - 開発製造
@@ -125,12 +131,18 @@ scoring_axes:
   - id: ai_vision
     name: AI・画像処理あり
     points: 10
-    description: AI・画像処理・画像認識等の技術を開発または製品へ利用している。
+    description: >
+      AI・画像処理・画像認識等の技術を開発または製品へ利用している。
+      単なる一般文脈の「AI」表記だけでは加点しない。
     detection: keyword_any
     keywords:
-      - AI
-      - 人工知能
       - エッジAI
+      - AI技術
+      - AI開発
+      - AI搭載
+      - AI活用
+      - AI画像
+      - 人工知能
       - 機械学習
       - 深層学習
       - ディープラーニング
@@ -157,9 +169,15 @@ scoring_axes:
       - R&Dセンター
       - 開発センター
       - 技術センター
+      - テクニカルセンター
       - 研究所
       - 開発拠点
       - 製品開発部
+      - 設計開発
+      - 研究開発
+      - 技術開発
+      - 開発・設計
+      - 開発棟
 
   - id: engineer_recruiting
     name: 技術者採用中
@@ -188,23 +206,21 @@ scoring_axes:
       - エンジニア募集
       - 技術職
       - 開発職
+      - 設計開発
+      - 電気設計
+      - 電気電子
+      - 製品開発
+      - 研究開発
+      - 技術開発
 
   - id: active_new_product
     name: 新製品開発が活発
     points: 10
     description: >
       R2必須項目「新製品発売（2年以内）」をEvidenceとして、
-      直近2年の新製品・新機種・製品リリースを確認する。
-    detection: recent_keyword_any_on_page
+      同一ページ上で直近2年の日付と新製品・新機種・製品リリースを確認する。
+    detection: recent_keyword_any
     recent_years: 2
-    target_pages:
-      - /news
-      - /topics
-      - /press
-      - /release
-      - /product
-      - /products
-      - /new
     keywords:
       - 新製品
       - 新商品
@@ -233,7 +249,6 @@ rank_thresholds:
   B: 70
   C: 0
 
-# 営業リソース集中対象（R2記載どおりS/A）
 candidate_ranks:
   - S
   - A
@@ -309,9 +324,12 @@ report_fields:
     name: AI利用
     detection: keyword_any
     keywords:
-      - AI
-      - 人工知能
       - エッジAI
+      - AI技術
+      - AI開発
+      - AI搭載
+      - AI活用
+      - 人工知能
       - 機械学習
       - 深層学習
       - ディープラーニング
@@ -353,16 +371,8 @@ report_fields:
 
   - id: recent_product_release
     name: 新製品発売（2年以内）
-    detection: recent_keyword_any_on_page
+    detection: recent_keyword_any
     recent_years: 2
-    target_pages:
-      - /news
-      - /topics
-      - /press
-      - /release
-      - /product
-      - /products
-      - /new
     keywords:
       - 新製品
       - 新商品
@@ -393,6 +403,12 @@ report_fields:
       - 組み込み
       - 開発職
       - 技術職
+      - 設計開発
+      - 電気設計
+      - 電気電子
+      - 製品開発
+      - 研究開発
+      - 技術開発
 
   - id: development_base_count
     name: 開発拠点数
@@ -442,7 +458,12 @@ crawl_paths:
   - /rd
   - /research
   - /about
+  - /about/profile
+  - /about/outline
   - /company
+  - /company/profile
+  - /company/outline
+  - /corporate/profile
   - /business
   - /service
   - /oem
