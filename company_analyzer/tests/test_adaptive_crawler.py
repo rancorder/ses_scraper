@@ -1,3 +1,5 @@
+from datetime import date
+
 from company_analyzer.crawler.crawler import (
     _discover_candidate_links,
     _fetch_page_sync,
@@ -51,10 +53,12 @@ def test_relevant_links_are_priority_sorted():
     assert links[0][1] == "https://example.com/technology/fpga-linux"
 
 
-def test_news_archive_pagination_is_discovered():
+def test_news_archive_pagination_advances_only_one_page():
     html = """
     <a href="/news/page/2/">2</a>
     <a href="/news/page/3/">3</a>
+    <a href="/news/page/5/">5</a>
+    <a href="/news/page/46/">46</a>
     <a href="/privacy/">privacy</a>
     """
     links = _discover_candidate_links(
@@ -64,14 +68,36 @@ def test_news_archive_pagination_is_discovered():
     )
     urls = [url for _, url in links]
     assert "https://example.com/news/page/2" in urls
-    assert "https://example.com/news/page/3" in urls
+    assert "https://example.com/news/page/3" not in urls
+    assert "https://example.com/news/page/5" not in urls
+    assert "https://example.com/news/page/46" not in urls
     assert not any("privacy" in url for url in urls)
 
+    html2 = """
+    <a href="/news/page/2/">2</a>
+    <a href="/news/page/3/">3</a>
+    <a href="/news/page/10/">10</a>
+    """
+    links2 = _discover_candidate_links(
+        html2,
+        "https://example.com/news/page/2/",
+        "https://example.com/",
+    )
+    urls2 = [url for _, url in links2]
+    assert "https://example.com/news/page/3" in urls2
+    assert "https://example.com/news/page/10" not in urls2
 
-def test_event_archive_year_navigation_is_discovered():
-    html = """
-    <a href="/technology/event/y2026/">2026年</a>
-    <a href="/technology/event?year=2025">2025年</a>
+
+def test_event_archive_year_navigation_is_recent_only():
+    current_year = date.today().year
+    previous = current_year - 1
+    two_years_ago = current_year - 2
+    old = current_year - 3
+    html = f"""
+    <a href="/technology/event/y{current_year}/">{current_year}年</a>
+    <a href="/technology/event?year={previous}">{previous}年</a>
+    <a href="/technology/event/y{two_years_ago}/">{two_years_ago}年</a>
+    <a href="/technology/event/y{old}/">{old}年</a>
     <a href="/company/">会社情報</a>
     """
     links = _discover_candidate_links(
@@ -80,8 +106,14 @@ def test_event_archive_year_navigation_is_discovered():
         "https://example.com/",
     )
     urls = [url for _, url in links]
-    assert "https://example.com/technology/event/y2026" in urls
-    assert "https://example.com/technology/event?year=2025" in urls
+    assert f"https://example.com/technology/event/y{current_year}" in urls
+    assert f"https://example.com/technology/event?year={previous}" in urls
+    assert f"https://example.com/technology/event/y{two_years_ago}" in urls
+    assert f"https://example.com/technology/event/y{old}" not in urls
+
+    # 今年の年別ページを前年より優先する。
+    scores = {url: score for score, url in links}
+    assert scores[f"https://example.com/technology/event/y{current_year}"] > scores[f"https://example.com/technology/event?year={previous}"]
 
 
 def test_fetch_page_keeps_final_redirect_url():
