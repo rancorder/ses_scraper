@@ -2,7 +2,7 @@
 crawler/crawler.py - requests 軽量クローラー
 ============================================================
 固定パス巡回に加え、取得ページ内の内部リンクから製品・技術・開発・
-採用・ニュース等の関連ページを優先探索する。
+採用・ニュース・展示会・問い合わせ等の関連ページを優先探索する。
 """
 from __future__ import annotations
 
@@ -96,6 +96,19 @@ _DISCOVERY_SIGNALS = {
     "topics": 12,
     "ニュース": 14,
     "新製品": 20,
+    "event": 22,
+    "events": 22,
+    "exhibition": 26,
+    "exhibitions": 26,
+    "expo": 22,
+    "展示会": 26,
+    "出展": 26,
+    "出店": 18,
+    "イベント": 20,
+    "contact": 18,
+    "inquiry": 18,
+    "お問い合わせ": 18,
+    "問い合わせ": 16,
     "oem": 14,
     "odm": 14,
     "solution": 10,
@@ -251,8 +264,6 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
         queued.add(canonical)
         heapq.heappush(heap, (-priority, next(seq), canonical))
 
-    # トップを最優先。固定シードは広いカテゴリを先に押さえ、
-    # その後に内部リンクの深掘りを行う。
     enqueue(_normalize_url(base_url, "/"), 1000)
     for path in _paths:
         if path == "/":
@@ -260,7 +271,6 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
         seed_url = _normalize_url(base_url, path)
         enqueue(seed_url, 200 + _link_score(seed_url, path))
 
-    # soft-404/リダイレクト重複を除外するため、試行数は成功ページ数より多めに確保。
     max_attempts = max(cfg.max_pages_per_site * 8, 64)
     attempts = 0
 
@@ -286,8 +296,6 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
         final_url = _canonical_url(result.url or requested_url)
         fp = _html_fingerprint(result.html)
 
-        # 最終URLまたはHTMLが同一なら、1ページとしては数えない。
-        # ただし最終URLを基準にリンク解析は行う。
         is_duplicate = final_url in successful_urls or fp in successful_html
         if not is_duplicate:
             result.url = final_url
