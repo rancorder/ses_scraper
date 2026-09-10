@@ -1,4 +1,7 @@
-from company_analyzer.crawler.crawler import _discover_candidate_links
+from company_analyzer.crawler.crawler import (
+    _discover_candidate_links,
+    _fetch_page_sync,
+)
 
 
 def test_discovers_relevant_nested_links_same_domain_only():
@@ -38,3 +41,20 @@ def test_relevant_links_are_priority_sorted():
         "https://example.com/",
     )
     assert links[0][1] == "https://example.com/technology/fpga-linux"
+
+
+def test_fetch_page_keeps_final_redirect_url():
+    class FakeResponse:
+        status_code = 200
+        encoding = "utf-8"
+        apparent_encoding = "utf-8"
+        text = "<html><body>会社概要</body></html>"
+        url = "https://example.com/jp/"
+
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    result = _fetch_page_sync(FakeSession(), "https://example.com/")
+    assert result.status_code == 200
+    assert result.url == "https://example.com/jp/"
