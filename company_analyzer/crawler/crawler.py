@@ -189,6 +189,12 @@ def _canonical_url(url: str) -> str:
     return urlunparse((p.scheme.lower(), p.netloc.lower(), path, "", p.query, ""))
 
 
+def _origin_root_url(url: str) -> str:
+    """個別ページURLから同一ドメインのルートURLを作る。"""
+    p = urlparse(url)
+    return urlunparse((p.scheme.lower(), p.netloc.lower(), "/", "", "", ""))
+
+
 def _html_fingerprint(html: str) -> str:
     normalized = re.sub(r"\s+", " ", html).strip()
     return hashlib.sha1(normalized.encode("utf-8", errors="ignore")).hexdigest()
@@ -417,8 +423,14 @@ def crawl_site_sync(
         queued.add(canonical)
         heapq.heappush(heap, (-priority, next(seq), canonical))
 
-    # 入力が会社固有サブページなら、そのURL自体を失わず最初に取得する。
+    # 入力URLそのものを最優先で取得する。
     enqueue(base_url, 1000)
+
+    # 入力が個別ページでも、ドメインルートを必ず確認する。
+    # 親会社・グループ共通サイトか、自社専用サイトかの判定に使用する。
+    origin_root = _origin_root_url(base_url)
+    if _canonical_url(origin_root) != _canonical_url(base_url):
+        enqueue(origin_root, 990)
 
     # 親会社/グループ共通ドメインから対象会社固有ページを見つけるための入口。
     for path in _COMPANY_SCOPE_SEED_PATHS:

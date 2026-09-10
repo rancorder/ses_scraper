@@ -3,6 +3,7 @@ from datetime import date
 from company_analyzer.crawler.crawler import (
     _discover_candidate_links,
     _fetch_page_sync,
+    _origin_root_url,
 )
 
 
@@ -177,3 +178,10 @@ def test_fetch_page_keeps_final_redirect_url():
     result = _fetch_page_sync(FakeSession(), "https://example.com/")
     assert result.status_code == 200
     assert result.url == "https://example.com/jp/"
+
+
+def test_subpage_input_derives_origin_root():
+    assert (
+        _origin_root_url("https://www.tel.co.jp/about/locations/tml.html")
+        == "https://www.tel.co.jp/"
+    )
