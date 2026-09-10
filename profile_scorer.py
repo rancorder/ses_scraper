@@ -101,7 +101,11 @@ _CORPORATE_IDENTITY_RE = re.compile(
 
 
 def _page_identity_text(page) -> str:
-    parts = [str(getattr(page, "title", "") or "")]
+    """ページ自身がどの法人を表すかを見る。footer/bodyの会社一覧は使わない。"""
+    parts = [
+        str(getattr(page, "title", "") or ""),
+        str(getattr(page, "meta_desc", "") or ""),
+    ]
     for attr in ("h1", "h2"):
         value = getattr(page, attr, []) or []
         if isinstance(value, list):
@@ -116,26 +120,43 @@ def _root_like_page(page) -> bool:
     return path in ("/", "/jp", "/en")
 
 
-def _formal_scoring_scope(pages: list, company_name: str) -> tuple[list, bool]:
-    """親会社/グループ共通サイトのEvidenceを正式点から除外する。
+_JA_CORPORATE_IDENTITY_RE = re.compile(
+    r"株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|一般財団法人"
+)
 
-    ルートページが対象会社名ではなく別法人を明示している場合だけ厳格モードに入り、
-    対象会社名を本文等で明示するページだけをR2正式採点に使う。
-    通常の自社サイトや法人名をタイトルに出さないサイトは従来どおり全ページを使う。
+
+def _formal_scoring_scope(pages: list, company_name: str) -> tuple[list, bool]:
+    """R2正式採点の会社スコープ。
+
+    専用企業サイト:
+        ルートが対象会社本人なら同一サイト全体を使用。
+
+    親会社・グループ共通サイト:
+        ルートに別の日本法人名が明示されている場合のみ厳格モード。
+        title / h1 / h2 / meta description で対象会社本人と確認できる
+        ページだけ正式採点に使用する。
+
+    footerや本文末尾のグループ会社一覧だけで本人扱いしない。
     """
     if not pages or not company_name:
         return pages, False
 
     root = next((p for p in pages if _root_like_page(p)), pages[0])
-    identity = _page_identity_text(root)
-    if _company_mentioned(company_name, identity):
-        return pages, False
-    if not _CORPORATE_IDENTITY_RE.search(identity):
+    root_identity = _page_identity_text(root)
+
+    # 自社専用サイト
+    if _company_mentioned(company_name, root_identity):
         return pages, False
 
+    # ブランド名のみなど、別法人サイトと断定できない場合は過剰除外しない。
+    if not _JA_CORPORATE_IDENTITY_RE.search(root_identity):
+        return pages, False
+
+    # 親会社/グループ共通サイト。
     scoped = [
-        p for p in pages
-        if _company_mentioned(company_name, _all_text_from_pages([p]))
+        p
+        for p in pages
+        if _company_mentioned(company_name, _page_identity_text(p))
     ]
     return scoped, True
 
