@@ -248,10 +248,10 @@ _EXHIBITION_CONTEXT_RE = re.compile(
     r"展示会|見本市|exhibition|expo|trade\s*show|ブース|(?:技術|産業|国際|製造|電子|機械|材料)[^。\n]{0,20}フェア",
     re.IGNORECASE,
 )
-_EXHIBITION_ACTION_RE = re.compile(r"出展|ブース出展|exhibit(?:ion|or|ing)?", re.IGNORECASE)
-# 固有イベント名だけで『○○に出展』と書かれるページも展示会文脈として扱う。
-# CEATEC / EdgeTech+ / OPIE のような固有名詞をハードコードせず、
-# 出展語の近傍に引用符付き名称、英数字イベント名、○○展/フェア等があることを要求する。
+_EXHIBITION_ACTION_RE = re.compile(
+    r"出展|ブース出展|exhibit(?:ion|or|ing)?|ご来場[^。\n]{0,80}(?:ありがとう|御礼)",
+    re.IGNORECASE,
+)
 _EXHIBITION_NAME_HINT_RE = re.compile(
     r"(?:「[^」]{2,80}」|『[^』]{2,80}』|[\"“][^\"”]{2,80}[\"”]|"
     r"[A-Za-z][A-Za-z0-9+.'&’・\- ]{2,50}(?:20\d{2}|[’']?\d{2})|"
@@ -264,7 +264,8 @@ _UPCOMING_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 _PAST_ACTION_RE = re.compile(
-    r"出展しました|出展いたしました|出展致しました|出展報告|出展実績|出展終了|出展してまいりました|exhibited",
+    r"出展しました|出展いたしました|出展致しました|出展報告|出展実績|出展終了|出展してまいりました|exhibited|"
+    r"ご来場[^。\n]{0,80}(?:ありがとうございました|ありがとう|御礼)",
     re.IGNORECASE,
 )
 _EVENT_DATE_LABEL_RE = re.compile(r"開催日|会期|開催期間|日時|開催日時|event\s*date", re.IGNORECASE)
@@ -276,6 +277,11 @@ def _is_exhibition_context(text: str) -> bool:
     if not _EXHIBITION_ACTION_RE.search(text):
         return False
     return bool(_EXHIBITION_CONTEXT_RE.search(text) or _EXHIBITION_NAME_HINT_RE.search(text))
+
+
+def _is_publish_date_context(text: str, start: int, end: int) -> bool:
+    around = text[max(0, start - 48):end + 20]
+    return bool(_PUBLISH_DATE_LABEL_RE.search(around))
 
 
 def _date_context_score(text: str, start: int, end: int) -> int:
@@ -308,22 +314,28 @@ def _clean_event_name(value: str) -> str:
     return value[:80]
 
 
-def _extract_event_name(text: str, focus_pos: int) -> str:
-    """出展文脈の近傍から展示会名候補を抽出する。会社名やページ名は代入しない。"""
-    start = max(0, focus_pos - 260)
-    end = min(len(text), focus_pos + 260)
+def _event_name_from_text(text: str, focus_pos: int) -> str:
+    start = max(0, focus_pos - 300)
+    end = min(len(text), focus_pos + 360)
     snippet = text[start:end]
+    local_focus = focus_pos - start
 
-    # 「○○フェア2026」等、引用符付き名称を最優先。
+    quoted: list[tuple[int, str]] = []
     for pat in [r"「([^」]{2,80})」", r"『([^』]{2,80})』", r"[\"“]([^\"”]{2,80})[\"”]"]:
         for match in re.finditer(pat, snippet):
             candidate = _clean_event_name(match.group(1))
-            if candidate and re.search(r"展|expo|exhibition|フェア|show|フォーラム|conference|ceatec|edgetech|opie", candidate, re.IGNORECASE):
-                return candidate
+            if not candidate:
+                continue
+            # 出展語近傍の引用名は、Smart Sensing等のように『展』を含まなくても許容する。
+            distance = abs(match.start() - local_focus)
+            if distance <= 260:
+                quoted.append((distance, candidate))
+    if quoted:
+        quoted.sort(key=lambda item: (item[0], len(item[1])))
+        return quoted[0][1]
 
-    # 『CEATEC 2026に出展』『OPIE’25に出展』のような名称。
     before_action = re.search(
-        r"([A-Za-z][A-Za-z0-9+.'&’・\- ]{1,40}(?:20\d{2}|[’']?\d{2})?)\s*(?:に|へ)?出展",
+        r"([A-Za-z][A-Za-z0-9+.'&’・\- ]{1,50}(?:20\d{2}|[’']?\d{2})?)\s*(?:に|へ)?出展",
         snippet,
         re.IGNORECASE,
     )
@@ -332,18 +344,39 @@ def _extract_event_name(text: str, focus_pos: int) -> str:
         if len(candidate) >= 3:
             return candidate
 
-    # 日本語の『○○展』『○○フェア』を拾う。
-    event_like = re.search(
-        r"([A-Za-z0-9０-９一-龥ぁ-んァ-ヶ・＆&+\-／/（）()'’ ]{2,70}(?:展示会|見本市|フェア(?:20\d{2})?|ショー(?:20\d{2})?|展(?:20\d{2})?))",
+    # 『第32回 日本国際工作機械見本市(JIMTOF2024)』等を優先する。
+    explicit = re.search(
+        r"(第\s*\d+\s*回[^。]{2,70}?(?:展示会|見本市|フェア|ショー|展)(?:\([^)]{1,30}\))?)",
         snippet,
         re.IGNORECASE,
     )
-    if event_like:
-        candidate = _clean_event_name(event_like.group(1))
-        if candidate and candidate not in ("展示会", "出展"):
+    if explicit:
+        candidate = _clean_event_name(explicit.group(1))
+        if candidate:
             return candidate
 
+    event_matches: list[tuple[int, int, str]] = []
+    for match in re.finditer(
+        r"([A-Za-z0-9０-９一-龥ぁ-んァ-ヶ・＆&+\-／/（）()'’ ]{2,55}(?:展示会|見本市|フェア(?:20\d{2})?|ショー(?:20\d{2})?|展(?:20\d{2})?))",
+        snippet,
+        re.IGNORECASE,
+    ):
+        candidate = _clean_event_name(match.group(1))
+        if candidate and candidate not in ("展示会", "出展"):
+            event_matches.append((abs(match.start() - local_focus), len(candidate), candidate))
+    if event_matches:
+        event_matches.sort(key=lambda item: (item[0], item[1]))
+        return event_matches[0][2]
     return ""
+
+
+def _extract_event_name(text: str, focus_pos: int, title: str = "") -> str:
+    """タイトルを優先し、次に開催日/出展語近傍から展示会名を抽出する。"""
+    if title and _is_exhibition_context(title):
+        name = _event_name_from_text(title, max(0, len(title) // 2))
+        if name:
+            return name
+    return _event_name_from_text(text, focus_pos)
 
 
 def _exhibition_evidence(
@@ -356,15 +389,16 @@ def _exhibition_evidence(
     """展示会予定/実績を開催日・対象会社・展示会名のEvidence付きで判定する。
 
     - 『出店』単独は展示会として扱わない。
-    - 公開日より『開催日/会期』に近い日付を優先する。
+    - 日付周辺のローカル文脈で予定/実績を判別し、別イベント同士の混線を防ぐ。
+    - 過去の『出展します』告知は実績とはみなさず『過去出展告知（実績未確認）』として残す。
     - 対象会社名がページ内で確認できない場合は参考候補として出すがearned=False。
-    - 過去実績では『出展します』ページの投稿日を実績日として誤採用しない。
     """
     today = date.today()
     cutoff = today - timedelta(days=max(1, recent_years) * 365)
     future_limit = today + timedelta(days=730)
     saw_context = False
     reference_candidates: list[str] = []
+    past_announcement_candidates: list[tuple[date, str]] = []
     candidates: list[tuple[date, str, str, str]] = []
 
     for p in pages:
@@ -372,45 +406,50 @@ def _exhibition_evidence(
         if not _is_exhibition_context(page_text):
             continue
         saw_context = True
-
-        dates = _extract_full_dates_with_spans(page_text)
-        upcoming_wording = bool(_UPCOMING_ACTION_RE.search(page_text))
-        past_wording = bool(_PAST_ACTION_RE.search(page_text))
-
-        if mode == "upcoming":
-            if not upcoming_wording:
-                continue
-            matched = [item for item in dates if today <= item[0] <= future_limit]
-        else:
-            matched = [item for item in dates if cutoff <= item[0] < today]
-            if not past_wording:
-                matched = [
-                    item for item in matched
-                    if _EVENT_DATE_LABEL_RE.search(page_text[max(0, item[1] - 48):item[2] + 12])
-                ]
-            if not matched:
-                continue
-
-        chosen = _choose_event_date(page_text, matched)
-        if not chosen:
-            continue
-        evidence_date, focus_pos = chosen
+        title = str(getattr(p, "title", "") or "").strip()
         url = str(getattr(p, "url", "") or "").strip()
-        event_name = _extract_event_name(page_text, focus_pos)
-
         direct_company = _company_mentioned(company_name, page_text) if company_name else True
-        kind = "出展予定" if mode == "upcoming" else "出展実績"
-        parts = [f"{kind}:{evidence_date.isoformat()}"]
-        parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
-        parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
-        if url:
-            parts.append(url)
-        detail = " / ".join(parts)
 
-        if direct_company:
-            candidates.append((evidence_date, event_name, url, detail))
-        else:
-            reference_candidates.append("参考候補 / " + detail)
+        for event_date, start, end in _extract_full_dates_with_spans(page_text):
+            if _is_publish_date_context(page_text, start, end):
+                continue
+            local = page_text[max(0, start - 420):min(len(page_text), end + 520)]
+            if not _is_exhibition_context(local):
+                continue
+
+            local_upcoming = bool(_UPCOMING_ACTION_RE.search(local))
+            local_past = bool(_PAST_ACTION_RE.search(local))
+            if mode == "upcoming":
+                if not (today <= event_date <= future_limit and local_upcoming):
+                    continue
+            else:
+                if not (cutoff <= event_date < today):
+                    continue
+                if not local_past:
+                    if local_upcoming:
+                        event_name = _extract_event_name(page_text, start, title=title)
+                        parts = [f"過去出展告知:{event_date.isoformat()}"]
+                        parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
+                        parts.append("実績未確認")
+                        parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
+                        if url:
+                            parts.append(url)
+                        past_announcement_candidates.append((event_date, " / ".join(parts)))
+                    continue
+
+            event_name = _extract_event_name(page_text, start, title=title)
+            kind = "出展予定" if mode == "upcoming" else "出展実績"
+            parts = [f"{kind}:{event_date.isoformat()}"]
+            parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
+            parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
+            if url:
+                parts.append(url)
+            detail = " / ".join(parts)
+
+            if direct_company:
+                candidates.append((event_date, event_name, url, detail))
+            else:
+                reference_candidates.append("参考候補 / " + detail)
 
     if candidates:
         chosen = min(candidates, key=lambda x: x[0]) if mode == "upcoming" else max(candidates, key=lambda x: x[0])
@@ -418,8 +457,13 @@ def _exhibition_evidence(
 
     if reference_candidates:
         return False, [], reference_candidates[0]
+
+    if mode == "recent" and past_announcement_candidates:
+        chosen = max(past_announcement_candidates, key=lambda item: item[0])
+        return False, [], chosen[1]
+
     if saw_context:
-        label = "将来の開催日＋出展予定表現" if mode == "upcoming" else f"直近{recent_years}年の開催日＋出展実績表現"
+        label = "将来の開催日＋出展予定表現" if mode == "upcoming" else f"直近{recent_years}年の開催日＋出展後Evidence"
         return False, [], f"展示会文脈あり／{label}未確認"
     return False, [], "展示会Evidence未確認"
 
