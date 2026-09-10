@@ -3,12 +3,14 @@
 使い方: python batch_run.py --file リスト.xlsx --profile sanko_steel --url-col 企業ホームページURL --batch 300
 """
 import argparse, asyncio, sys, time, gc
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, '/opt/ses_scraper/SES_scra_anaraiz')
 
 import pandas as pd
 import psutil
+
 
 def read_file(path: str, url_col: str) -> list[dict]:
     p = Path(path)
@@ -22,7 +24,6 @@ def read_file(path: str, url_col: str) -> list[dict]:
     else:
         df = pd.read_excel(p, dtype=str).fillna('')
 
-    # 列名候補を探す
     def find_col(candidates):
         for col in df.columns:
             if any(k in col for k in candidates):
@@ -95,7 +96,6 @@ def main():
         print(f'バッチ {i+1}/{n_batches} 開始 ({len(batch)}社) | メモリ: {mem.percent:.1f}%')
         print(f'{"="*50}')
 
-        # メモリ危険域なら少し待つ
         if mem.percent > 80:
             print(f'⚠ メモリ{mem.percent:.1f}% — 30秒待機')
             time.sleep(30)
@@ -107,14 +107,17 @@ def main():
         except Exception as e:
             print(f'❌ バッチ{i+1} エラー: {e}')
 
-        # バッチ間でGC
         gc.collect()
         time.sleep(5)
 
     print(f'\n✅ 全バッチ完了: {len(all_results)}社処理')
-    excellent = sum(1 for r in all_results if r.judgment == '◎')
-    good      = sum(1 for r in all_results if r.judgment == '○')
-    print(f'◎ {excellent}社 / ○ {good}社')
+    counts = Counter(str(r.judgment or '未判定') for r in all_results)
+    preferred_order = ['S', 'A', 'B', 'C', '◎', '○', '△', '－', '未判定']
+    parts = [f'{label} {counts[label]}社' for label in preferred_order if counts.get(label)]
+    for label in sorted(set(counts) - set(preferred_order)):
+        parts.append(f'{label} {counts[label]}社')
+    if parts:
+        print(' / '.join(parts))
 
 
 if __name__ == '__main__':

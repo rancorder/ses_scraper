@@ -1,0 +1,12 @@
+[Unit]
+Description=Run SES Drive Folder Watcher every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Persistent=true
+Unit=ses-agent-watcher.service
+
+[Install]
+WantedBy=timers.target

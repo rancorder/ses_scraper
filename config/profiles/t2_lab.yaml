@@ -1,160 +1,154 @@
 # ============================================================
-# T2 Laboratory 向けスクリーニングプロファイル
-# 目的: T2の3軸判定基準（メーカー・自社製品・電子回路設計）に
-#       基づき、エッジAI・組み込み協力企業候補を識別する
-# ベース: 判定ルールの可視化.pdf（T2 Laboratory Confidential）
+# T2 Laboratory 向けスクリーニングプロファイル R2準拠版
+# Source: 「今後作るべきリストについて R2」2026-07-23
+#         追加資料「リスト品質評価 / 当社にとってアポイントが取りやすい企業」
+# 目的: R2の技術適合100点は維持しつつ、展示会・リスト品質Evidenceを付加する。
 # ============================================================
 
-name: T2 Laboratory 協力企業候補
+name: T2 Laboratory R2 開発会社スクリーニング
 description: >
-  T2の3軸判定基準（メーカー・自社HW製品・電子回路設計）に準拠したスクリーニング。
-  SaaS・商社・コンサル等の非製造業を除外し、エッジAI・組み込み開発の
-  協力企業候補を高精度で抽出する。
+  T2資料「今後作るべきリストについて R2」に準拠。
+  単なる電子機器メーカーではなく、自社製品・電子回路・FPGA/SoC・
+  組込みLinux・AI/画像処理等の開発機能を持ち、開発活動や技術者採用が
+  確認できる企業を優先する。採点はR2記載の8項目・合計100点のみで行う。
+  追加資料のリスト品質観点と展示会情報は採点外Evidenceとして出力する。
 
 keywords_search:
-  - エッジAI
-  - 組み込み開発
-  - 画像処理
-  - IoT
-  - 組み込みシステム
-  - FPGA
-  - 画像検査
-  - エッジコンピューティング
   - 電子回路設計
-  - 制御基板
+  - FPGA
+  - SoC
+  - 組込みLinux
+  - 組み込みLinux
+  - 画像処理
+  - エッジAI
+  - 自社製品
+  - 研究開発
+  - 開発部門
+  - 技術者採用
+  - 新製品
+  - 展示会
+  - 出展
 
+# ------------------------------------------------------------
+# R2 2章「新しいリスト作成条件」そのままの100点配点
+# ------------------------------------------------------------
 scoring_axes:
 
-  # ════════════════════════════════════════════════════════
-  # 軸①：メーカー判定（T2の第1条件）
-  # 基準：自社工場・提携工場でモノを製造・加工しているか
-  # ════════════════════════════════════════════════════════
-
-  - id: manufacturer_detection
-    name: メーカー判定（製造・加工業か）
-    points: 30
+  - id: own_product_manufacturer
+    name: 自社製品メーカー
+    points: 20
     description: >
-      自社工場・提携工場でハードウェア・装置・電子デバイス・素材を
-      製造・加工している企業を検出。EMS・受託製造も含む。
-    detection: keyword_count
-    min_hits: 2
-    keywords:
-      - 製造
-      - 加工
-      - 工場
-      - 生産
-      - 製作
-      - 量産
-      - 製品製造
-      - ものづくり
-      - モノづくり
-      - EMS
-      - 受託製造
-      - 受託加工
-      - 金属加工
-      - 部品製造
-      - 装置製造
-      - 設備製造
-      - 電子デバイス
-      - ハードウェア製造
-      - 自社工場
-      - 提携工場
-
-  # ════════════════════════════════════════════════════════
-  # 軸②：自社ハードウェア製品の有無（T2の第2条件）
-  # 基準：自社ブランド・独自仕様の物理的な製品を保有しているか
-  # ════════════════════════════════════════════════════════
-
-  - id: own_hw_product
-    name: 自社HW製品の有無
-    points: 30
-    description: >
-      自社企画・ブランドの物理製品（ロボット・ディスプレイ・家電・IC・
-      計測器等）を市場に提供している企業を検出。型番・製品ページの存在も加点。
-    detection: keyword_and_pattern
-    keywords:
-      - 製品情報
-      - 製品一覧
-      - 型番
-      - ラインアップ
-      - 自社製品
-      - 製品カタログ
-      - 製品紹介
-      - 自社開発製品
-      - オリジナル製品
-      - 自社ブランド
-      - ロボット
-      - センサー
-      - 計測器
-      - 検査装置
-      - 制御装置
-      - 電源装置
-      - 表示装置
-      - 通信モジュール
-      - カメラモジュール
-      - ICモジュール
-    patterns:
-      - "[A-Z]{1,5}[-_]?\\d{2,}[-_]?[A-Z0-9]*"
-      - "\\d+\\.?\\d*\\s*(MHz|GHz|MB|GB|mA|mW|W|V|fps|Mbps|nm)"
-    url_signals:
-      - /product
-      - /products
-      - /lineup
-      - /solution
-      - /technology
-      - /catalogue
-
-  # ════════════════════════════════════════════════════════
-  # 軸③：電子回路設計の有無（T2の第3条件）
-  # 基準：電子回路・基板の設計技術を事業として有しているか
-  # ════════════════════════════════════════════════════════
+      自社製品を開発し、物理製品・装置・基板・電子機器等を市場提供する企業。
+      単なる販売代理・他社製品販売だけでは加点しない。
+    detection: keyword_groups_all
+    keyword_groups:
+      -
+        - 自社製品
+        - 当社製品
+        - 自社開発製品
+        - 自社ブランド
+        - オリジナル製品
+        - 独自製品
+        - 製品開発
+        - 商品開発
+        - 製品情報
+        - 製品一覧
+        - 製品ラインアップ
+        - 製品ご案内
+        - 主力製品
+        - 新製品
+      -
+        - 電子機器
+        - 電子デバイス
+        - ハードウェア
+        - 装置
+        - 制御装置
+        - 検査装置
+        - 計測器
+        - センサー
+        - 基板
+        - モジュール
+        - ロボット
+        - コネクタ
+        - 製造
+        - 開発・製造
+        - 開発製造
 
   - id: circuit_design
-    name: 電子回路設計軸
-    points: 25
-    description: >
-      制御基板・組み込みHW・ICの設計開発を行っている企業、または
-      受託事業としてハードウェア・電子回路設計を請け負う企業を検出。
+    name: 電子回路設計あり
+    points: 20
+    description: 電子回路・基板・電気回路の設計開発を事業として行っている。
     detection: keyword_any
     keywords:
       - 電子回路設計
       - 回路設計
       - 基板設計
-      - プリント基板
       - PCB設計
-      - 制御基板
-      - 組み込みハードウェア
+      - プリント基板設計
+      - 制御回路設計
+      - アナログ回路設計
+      - デジタル回路設計
+      - 電源回路設計
       - ハードウェア設計
-      - IC設計
-      - LSI設計
+      - 電気回路設計
+
+  - id: fpga_soc_development
+    name: FPGA・SoC開発あり
+    points: 15
+    description: FPGAまたはSoCを用いた設計・開発を行っている。
+    detection: keyword_any
+    keywords:
+      - FPGA開発
+      - FPGA設計
+      - FPGA回路
       - FPGA
-      - マイコン
-      - マイクロコントローラ
-      - ARM
-      - ARM Cortex
-      - RTOS
-      - ファームウェア
-      - 組み込み
+      - SoC開発
+      - SoC設計
+      - SoC
+      - System on Chip
+      - Zynq
+      - Cyclone
+      - Arria
+      - Artix
+      - Kintex
+      - Versal
+
+  - id: embedded_linux_development
+    name: 組込みLinux開発あり
+    points: 10
+    description: 組込みLinux環境・BSP・Linuxベース組込み開発を行っている。
+    detection: keyword_any
+    keywords:
+      - 組込みLinux
+      - 組み込みLinux
+      - Embedded Linux
       - Yocto
       - Buildroot
-      - RISC-V
-      - ベアメタル
-      - 電気回路
-      - アナログ回路
-      - デジタル回路
-      - 電源回路
+      - Linux BSP
+      - BSP開発
+      - Linuxドライバ
+      - デバイスドライバ開発
+      - Linux組込み
+      - Linux組み込み
 
-  # ════════════════════════════════════════════════════════
-  # 追加加点：エッジAI・IoT技術領域（T2の重点領域）
-  # ════════════════════════════════════════════════════════
-
-  - id: edge_ai_domain
-    name: エッジAI・画像処理領域
+  - id: ai_vision
+    name: AI・画像処理あり
     points: 10
-    description: エッジAI・画像処理・コンピュータビジョン技術の保有
+    description: >
+      AI・画像処理・画像認識等の技術を開発または製品へ利用している。
+      単なる一般文脈の「AI」表記だけでは加点しない。
     detection: keyword_any
     keywords:
       - エッジAI
+      - AI技術
+      - AI開発
+      - AI搭載
+      - AI活用
+      - AI画像
+      - 人工知能
+      - 機械学習
+      - 深層学習
+      - ディープラーニング
       - 画像処理
       - 画像認識
       - 物体検出
@@ -162,137 +156,428 @@ scoring_axes:
       - マシンビジョン
       - コンピュータビジョン
       - OpenCV
-      - 深層学習
-      - 機械学習
-      - エッジコンピューティング
-      - エッジデバイス
-      - 推論エンジン
 
-  - id: iot_domain
-    name: IoT・通信技術領域
-    points: 5
-    description: IoT・M2M・無線通信技術の保有
+  - id: development_department
+    name: 開発部門がある
+    points: 10
+    description: 研究開発・製品開発・技術開発を担う組織または拠点が確認できる。
     detection: keyword_any
     keywords:
-      - IoT
-      - M2M
-      - Internet of Things
-      - 無線通信
-      - センサーネットワーク
-      - リモートモニタリング
-      - コネクテッドデバイス
-      - スマートデバイス
+      - 開発部
+      - 開発本部
+      - 技術開発部
+      - 研究開発部
+      - 研究開発本部
+      - R&D部門
+      - R&Dセンター
+      - 開発センター
+      - 技術センター
+      - テクニカルセンター
+      - 研究所
+      - 開発拠点
+      - 製品開発部
+      - 設計開発
+      - 研究開発
+      - 技術開発
+      - 開発・設計
+      - 開発棟
 
-  - id: oem_presence
-    name: OEM／受託開発対応
+  - id: engineer_recruiting
+    name: 技術者採用中
     points: 5
-    description: OEM・ODM・共同開発・技術提携の記載
-    detection: keyword_count
-    min_hits: 2
+    description: 技術・開発系人材を現在募集しているEvidenceがある。
+    detection: keyword_any_on_page
+    target_pages:
+      - /recruit
+      - /career
+      - /careers
+      - /jobs
+      - /job
+      - /saiyo
+      - /採用
     keywords:
-      - OEM
+      - 回路設計
+      - 電子回路
+      - FPGA
+      - SoC
+      - 組込み
+      - 組み込み
+      - Linux
+      - ハードウェアエンジニア
+      - 開発エンジニア
+      - 技術者募集
+      - エンジニア募集
+      - 技術職
+      - 開発職
+      - 設計開発
+      - 電気設計
+      - 電気電子
+      - 製品開発
+      - 研究開発
+      - 技術開発
+
+  - id: active_new_product
+    name: 新製品開発が活発
+    points: 10
+    description: >
+      R2必須項目「新製品発売（2年以内）」をEvidenceとして、
+      同一ページ上で直近2年の日付と新製品・新機種・製品リリースを確認する。
+    detection: recent_keyword_any
+    recent_years: 2
+    keywords:
+      - 新製品
+      - 新商品
+      - 新機種
+      - 新モデル
+      - 発売
+      - 販売開始
+      - リリース
+      - 製品化
+      - 新たに開発
+      - 開発しました
+
+score_cap: 100
+score_floor: 0
+score_sum_max: 100
+bonus_rules: []
+
+thresholds:
+  excellent: 90
+  good: 80
+
+rank_thresholds:
+  S: 90
+  A: 80
+  B: 70
+  C: 0
+
+candidate_ranks:
+  - S
+  - A
+
+# R2正式100点は変更しない。AIや追加資料のEvidenceは加算しない。
+ai_score_bonus_weight: 0.0
+
+# ------------------------------------------------------------
+# R2 3章「今後のリストに必須の項目」＋追加資料の品質評価観点
+# 採点外の調査列。追加資料では7項目の点数例は示されているが、
+# 算式・重みは提示されていないため、ここではEvidenceを自動収集する。
+# ------------------------------------------------------------
+report_fields:
+  - id: circuit_inhouse_evidence
+    name: 電子回路設計内製度
+    detection: keyword_any
+    keywords:
+      - 自社設計
+      - 社内設計
+      - 一貫設計
+      - 回路設計
+      - 電子回路設計
+      - 基板設計
+
+  - id: fpga_usage
+    name: FPGA使用有無
+    detection: keyword_any
+    keywords:
+      - FPGA
+      - Zynq
+      - Cyclone
+      - Arria
+      - Artix
+      - Kintex
+      - Versal
+
+  - id: soc_usage
+    name: SoC使用有無
+    detection: keyword_any
+    keywords:
+      - SoC
+      - System on Chip
+      - Zynq
+      - i.MX
+      - Snapdragon
+      - Jetson
+
+  - id: embedded_linux_presence
+    name: 組込みLinux
+    detection: keyword_any
+    keywords:
+      - 組込みLinux
+      - 組み込みLinux
+      - Embedded Linux
+      - Yocto
+      - Buildroot
+      - Linux BSP
+
+  - id: image_processing
+    name: 画像処理技術
+    detection: keyword_any
+    keywords:
+      - 画像処理
+      - 画像認識
+      - 物体検出
+      - 外観検査
+      - マシンビジョン
+      - コンピュータビジョン
+      - OpenCV
+
+  - id: ai_usage
+    name: AI利用
+    detection: keyword_any
+    keywords:
+      - エッジAI
+      - AI技術
+      - AI開発
+      - AI搭載
+      - AI活用
+      - 人工知能
+      - 機械学習
+      - 深層学習
+      - ディープラーニング
+
+  - id: wireless_technology
+    name: 無線技術
+    detection: keyword_any
+    keywords:
+      - 無線通信
+      - Wi-Fi
+      - Bluetooth
+      - BLE
+      - LTE
+      - 5G
+      - LoRa
+      - LPWA
+      - Zigbee
+      - NFC
+
+  - id: iot_product
+    name: IoT製品
+    detection: keyword_any
+    keywords:
+      - IoT製品
+      - IoT機器
+      - IoTデバイス
+      - IoT端末
+      - Internet of Things
+      - コネクテッドデバイス
+
+  - id: odm_oem
+    name: ODM/OEM
+    detection: keyword_any
+    keywords:
       - ODM
+      - OEM
       - 受託開発
       - 共同開発
-      - 技術提携
-      - カスタム開発
-      - 協力会社
-      - パートナー企業
 
-  # ════════════════════════════════════════════════════════
-  # 除外ペナルティ（T2の×判定条件）
-  # ════════════════════════════════════════════════════════
+  - id: recent_product_release
+    name: 新製品発売（2年以内）
+    detection: recent_keyword_any
+    recent_years: 2
+    keywords:
+      - 新製品
+      - 新商品
+      - 新機種
+      - 新モデル
+      - 発売
+      - 販売開始
+      - リリース
 
-  - id: penalty_software_only
-    name: ソフトウェア・SaaS専業ペナルティ
-    points: -30
-    description: >
-      T2の×条件：物理的なモノを作っていない企業。
-      ソフトウェア開発・SaaS・IT/DXソリューション専業。
+  - id: engineer_hiring
+    name: 技術者募集
+    detection: keyword_any_on_page
+    target_pages:
+      - /recruit
+      - /career
+      - /careers
+      - /jobs
+      - /job
+      - /saiyo
+      - /採用
+    keywords:
+      - 技術者募集
+      - エンジニア募集
+      - 回路設計
+      - FPGA
+      - SoC
+      - 組込み
+      - 組み込み
+      - 開発職
+      - 技術職
+      - 設計開発
+      - 電気設計
+      - 電気電子
+      - 製品開発
+      - 研究開発
+      - 技術開発
+
+  # ----- 追加資料「リスト品質評価」対応 -----
+  - id: electronic_control_products
+    name: 電子機器・電子制御製品Evidence
     detection: keyword_any
     keywords:
-      - SaaS
-      - クラウドサービス
-      - ソフトウェア開発専業
-      - アプリ開発
-      - Webシステム開発
-      - DXソリューション
-      - ITソリューション専業
-      - システムインテグレーター専業
-      - ネットワーク構築のみ
-      - ソフトウェアのみ
+      - 電子機器
+      - 電子制御
+      - 電子制御製品
+      - 電子制御機器
+      - 制御機器
+      - 制御装置
+      - 電子デバイス
+      - 電子回路
+      - プリント基板
+      - 基板
+      - センサー
+      - モジュール
 
-  - id: penalty_trading_only
-    name: 商社・代理店ペナルティ
-    points: -25
-    description: >
-      T2の×条件：他社製品の販売のみを行う企業。
-      製造・加工を伴わない専門商社・代理店・卸売。
+  - id: exhibition_upcoming
+    name: 展示会出展予定
+    detection: exhibition_upcoming
+    keywords:
+      - 展示会
+      - 見本市
+      - 出展
+      - 出展予定
+      - 出展します
+      - 出展いたします
+      - 出展のお知らせ
+      - 出展決定
+      - ブース
+      - exhibition
+      - expo
+      - trade show
+
+  - id: exhibition_recent
+    name: 展示会出展実績（過去2年）
+    detection: exhibition_recent
+    recent_years: 2
+    keywords:
+      - 展示会
+      - 見本市
+      - 出展
+      - 出展実績
+      - 出展報告
+      - ブース
+      - exhibition
+      - expo
+      - trade show
+
+  - id: new_product_exhibition_activity
+    name: 新製品・展示会実績Evidence
+    detection: recent_keyword_any
+    recent_years: 2
+    keywords:
+      - 新製品
+      - 新商品
+      - 新機種
+      - 新モデル
+      - 発売
+      - 販売開始
+      - リリース
+      - 展示会
+      - 見本市
+      - 出展
+      - exhibition
+      - expo
+      - trade show
+
+  - id: product_electronics_evidence
+    name: 製品の電子化レベル（Evidence）
     detection: keyword_any
     keywords:
-      - 専門商社
-      - 代理店
-      - 正規代理店
-      - 総代理店
-      - 卸売
-      - 販売代理
-      - 輸入販売
-      - 輸出販売
-      - 商社
+      - 電子制御
+      - 電子回路
+      - 制御回路
+      - マイコン
+      - MCU
+      - FPGA
+      - SoC
+      - 組込み
+      - 組み込み
+      - IoT
+      - センサー
+      - 通信モジュール
+      - AI搭載
+      - 画像処理
 
-  - id: penalty_service_industry
-    name: サービス業ペナルティ
-    points: -20
-    description: >
-      T2の×条件：メディア・出版・物流・コンサルティング等のサービス業。
+  - id: development_info_publicity
+    name: 開発情報の公開度（Evidence）
     detection: keyword_any
     keywords:
-      - コンサルティング専業
-      - 経営コンサル
-      - 物流業
-      - 配送業
-      - 出版社
-      - メディア企業
-      - 人材派遣専業
-      - 警備業
+      - 研究開発
+      - 技術開発
+      - 設計開発
+      - 製品開発
+      - 開発部
+      - 開発本部
+      - 開発センター
+      - R&D
+      - 技術センター
+      - テクニカルセンター
+      - 開発事例
+      - 技術情報
+      - 技術紹介
 
-# スコア上限
-score_cap: 100
-score_floor: -30
+  - id: contact_department_info
+    name: 連絡先・部署情報の充実度（Evidence）
+    detection: contact_department
+    keywords:
+      - 開発部
+      - 開発本部
+      - 技術部
+      - 技術本部
+      - 研究開発
+      - 設計部
+      - 製品開発
+      - 営業部
+      - 営業本部
+      - 法人営業
+      - 技術営業
+      - 担当部署
+      - 担当者
 
-# 判定閾値（T2の3軸○○○に対応）
-thresholds:
-  excellent: 60   # ◎ 3軸すべて該当する可能性が高い企業
-  good: 35        # ○ 2軸以上該当する可能性がある企業
+  - id: development_base_count
+    name: 開発拠点数
+    detection: manual
+    unverified_text: 要確認（R2に自動算出ルールなし）
 
-score_labels:
-  - range: [60, 100]
-    label: "最優先候補（メーカー×自社製品×回路設計 すべて該当見込み）"
-  - range: [35, 59]
-    label: "優先候補（2軸以上該当見込み）"
-  - range: [10, 34]
-    label: "要確認（1軸該当または判定不明）"
-  - range: [-30, 9]
-    label: "対象外（非製造業・商社・SW専業）"
+  - id: estimated_designer_count
+    name: 設計者人数（推定）
+    detection: manual
+    unverified_text: 要確認（R2に推定ルールなし）
 
-# Ollama AI判定指示
+# ------------------------------------------------------------
+# AIは正式採点ではなく、外注可能性・提案テーマ・営業情報の補助判断。
+# ------------------------------------------------------------
 ai_instruction: |
-  T2 Laboratoryの3軸判定基準に基づいて評価してください。
+  株式会社ティーツー・ラボラトリの「今後作るべきリストについて R2」と
+  追加資料「リスト品質評価 / 当社にとってアポイントが取りやすい企業」に基づいて判定してください。
 
-  【判定の優先順位】
-  1. メーカー判定：自社工場・提携工場で物理的なモノを製造・加工しているか
-     ×の場合：SaaS・商社・物流・コンサルなど → 低スコア
-  2. 自社HW製品：自社ブランドの物理製品（SW・クラウドのみはNG）を保有しているか
-  3. 電子回路設計：制御基板・組み込みHW・ICの設計を事業として行っているか
+  正式な100点スコアはルールエンジン側のR2 8項目だけを採点します。
+  あなたのclient_scoreは正式点へ加算されない参考値です。
 
-  【T2が最も求める企業像】
-  メーカー(○) + 自社製品(○) + 回路設計(○)
-  = 電気制御を伴う機器・デバイス・ロボットを自社で開発・製造している企業
+  【R2のターゲット像】
+  単なる「電子機器メーカー」ではなく、開発機能を持ち、技術課題を抱える開発会社。
+  特に「開発案件があり、自社だけでは不足する技術を外部に求めている企業」が有望です。
 
-  client_score：エッジAI・組み込み技術の深さと製造業としての適格性（0-100）
-  partner_score：T2との協力関係における外注需要の高さ（0-100）
+  【重視する技術課題】
+  - AI・画像処理技術を強化したい
+  - FPGA・SoC設計を外部活用したい
+  - アナログ回路設計者が不足している
+  - センサ処理・組込みLinuxに対応したい
+  - 既存製品のリニューアル・高性能化を進めたい
 
-# クロール対象パス
+  【営業タイミングの補助Evidence】
+  - 展示会への出展予定
+  - 過去2年の展示会出展実績
+  - 新製品発表
+  - 開発情報を外部公開している
+  - 問い合わせ先・担当部署が明確
+
+  client_score：R2ターゲットへの技術適合度を0-100で参考評価
+  partner_score：外部技術を必要とする可能性・協業可能性を0-100で参考評価
+  reason：サイトで確認できた事実と、推測・未確認事項を分離して記載
+  sales_talk：確認できた技術課題や展示会・新製品等のタイミングに沿う提案テーマ。未確認の需要は断定しない
+
 crawl_paths:
   - /
   - /product
@@ -302,13 +587,33 @@ crawl_paths:
   - /solutions
   - /technology
   - /tech
+  - /development
+  - /rd
+  - /research
   - /about
+  - /about/profile
+  - /about/outline
   - /company
+  - /company/profile
+  - /company/outline
+  - /corporate/profile
   - /business
   - /service
   - /oem
   - /odm
   - /partner
   - /recruit
+  - /career
   - /careers
+  - /jobs
   - /news
+  - /topics
+  - /press
+  - /release
+  - /event
+  - /events
+  - /exhibition
+  - /exhibitions
+  - /expo
+  - /contact
+  - /inquiry
