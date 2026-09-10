@@ -51,6 +51,23 @@ def test_relevant_links_are_priority_sorted():
     assert links[0][1] == "https://example.com/technology/fpga-linux"
 
 
+def test_news_archive_pagination_is_discovered():
+    html = """
+    <a href="/news/page/2/">2</a>
+    <a href="/news/page/3/">3</a>
+    <a href="/privacy/">privacy</a>
+    """
+    links = _discover_candidate_links(
+        html,
+        "https://example.com/news/",
+        "https://example.com/",
+    )
+    urls = [url for _, url in links]
+    assert "https://example.com/news/page/2" in urls
+    assert "https://example.com/news/page/3" in urls
+    assert not any("privacy" in url for url in urls)
+
+
 def test_fetch_page_keeps_final_redirect_url():
     class FakeResponse:
         status_code = 200
