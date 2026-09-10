@@ -10,6 +10,10 @@ def _page(url: str, text: str) -> ParsedPage:
     return ParsedPage(url=url, title="test", body_text=text)
 
 
+def _axis(result, axis_id: str):
+    return next(a for a in result.axes if a.id == axis_id)
+
+
 def test_t2_r2_profile_definition_is_100_points():
     profile = load_profile("t2_lab")
     assert len(profile.scoring_axes) == 8
@@ -27,7 +31,7 @@ def test_t2_r2_full_match_scores_s_rank():
         _page(
             "https://example.com/products",
             "自社製品 電子機器 電子回路設計 FPGA開発 組込みLinux "
-            "AI 画像処理 研究開発部 新製品 発売 " + today,
+            "画像処理 研究開発部 新製品 発売 " + today,
         ),
         _page(
             "https://example.com/recruit",
@@ -57,7 +61,7 @@ def test_t2_r2_ai_reference_score_does_not_change_formal_score():
     pages = [
         _page(
             "https://example.com/products",
-            "自社製品 電子機器 電子回路設計 組込みLinux AI 画像処理 "
+            "自社製品 電子機器 電子回路設計 組込みLinux 画像処理 "
             "研究開発部 新製品 発売 " + today,
         )
     ]
@@ -76,3 +80,39 @@ def test_t2_r2_ai_reference_score_does_not_change_formal_score():
     result.calc_final_scores(profile=profile)
     assert result.final_client_score == 80
     assert result.judgment == "A"
+
+
+def test_bare_ai_word_does_not_earn_ai_vision_points():
+    profile = load_profile("t2_lab")
+    pages = [_page("https://example.com/", "生成AI時代に向けた経営方針を公開しました")]
+    result = ProfileScorer(profile).score("Example", "https://example.com", pages)
+    assert _axis(result, "ai_vision").score == 0
+
+
+def test_development_and_recruiting_real_world_phrasing_is_detected():
+    profile = load_profile("t2_lab")
+    pages = [
+        _page(
+            "https://example.com/company/profile",
+            "開発拠点としてテクニカルセンターを設置し、研究開発を行っています。",
+        ),
+        _page(
+            "https://example.com/recruit/",
+            "新卒採用 総合職 設計開発 コネクタの設計開発 電気電子系",
+        ),
+    ]
+    result = ProfileScorer(profile).score("Example", "https://example.com", pages)
+    assert _axis(result, "development_department").score == 10
+    assert _axis(result, "engineer_recruiting").score == 5
+
+
+def test_recent_product_release_can_be_detected_on_homepage():
+    profile = load_profile("t2_lab")
+    pages = [
+        _page(
+            "https://example.com/",
+            "2025.05.20 新製品情報 新型コネクタを発売しました。",
+        )
+    ]
+    result = ProfileScorer(profile).score("Example", "https://example.com", pages)
+    assert _axis(result, "active_new_product").score == 10
