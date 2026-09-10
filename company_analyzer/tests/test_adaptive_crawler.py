@@ -68,6 +68,22 @@ def test_news_archive_pagination_is_discovered():
     assert not any("privacy" in url for url in urls)
 
 
+def test_event_archive_year_navigation_is_discovered():
+    html = """
+    <a href="/technology/event/y2026/">2026年</a>
+    <a href="/technology/event?year=2025">2025年</a>
+    <a href="/company/">会社情報</a>
+    """
+    links = _discover_candidate_links(
+        html,
+        "https://example.com/technology/event/",
+        "https://example.com/",
+    )
+    urls = [url for _, url in links]
+    assert "https://example.com/technology/event/y2026" in urls
+    assert "https://example.com/technology/event?year=2025" in urls
+
+
 def test_fetch_page_keeps_final_redirect_url():
     class FakeResponse:
         status_code = 200
