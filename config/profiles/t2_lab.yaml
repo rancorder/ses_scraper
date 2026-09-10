@@ -434,16 +434,17 @@ report_fields:
     detection: exhibition_upcoming
     keywords:
       - 展示会
+      - 見本市
       - 出展
       - 出展予定
       - 出展します
       - 出展いたします
       - 出展のお知らせ
       - 出展決定
-      - 出店
-      - 出店予定
+      - ブース
       - exhibition
       - expo
+      - trade show
 
   - id: exhibition_recent
     name: 展示会出展実績（過去2年）
@@ -451,12 +452,14 @@ report_fields:
     recent_years: 2
     keywords:
       - 展示会
+      - 見本市
       - 出展
       - 出展実績
       - 出展報告
-      - 出店
+      - ブース
       - exhibition
       - expo
+      - trade show
 
   - id: new_product_exhibition_activity
     name: 新製品・展示会実績Evidence
@@ -471,10 +474,11 @@ report_fields:
       - 販売開始
       - リリース
       - 展示会
+      - 見本市
       - 出展
-      - 出店
       - exhibition
       - expo
+      - trade show
 
   - id: product_electronics_evidence
     name: 製品の電子化レベル（Evidence）
