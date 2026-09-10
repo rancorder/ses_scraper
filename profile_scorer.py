@@ -249,6 +249,16 @@ _EXHIBITION_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 _EXHIBITION_ACTION_RE = re.compile(r"出展|ブース出展|exhibit(?:ion|or|ing)?", re.IGNORECASE)
+# 固有イベント名だけで『○○に出展』と書かれるページも展示会文脈として扱う。
+# CEATEC / EdgeTech+ / OPIE のような固有名詞をハードコードせず、
+# 出展語の近傍に引用符付き名称、英数字イベント名、○○展/フェア等があることを要求する。
+_EXHIBITION_NAME_HINT_RE = re.compile(
+    r"(?:「[^」]{2,80}」|『[^』]{2,80}』|[\"“][^\"”]{2,80}[\"”]|"
+    r"[A-Za-z][A-Za-z0-9+.'&’・\- ]{2,50}(?:20\d{2}|[’']?\d{2})|"
+    r"[A-Za-z0-9０-９一-龥ぁ-んァ-ヶ・＆&+\-／/（）()'’ ]{2,70}(?:展示会|見本市|フェア|ショー|展))"
+    r"\s*(?:に|へ)?\s*出展",
+    re.IGNORECASE,
+)
 _UPCOMING_ACTION_RE = re.compile(
     r"出展予定|出展します|出展いたします|出展致します|出展のお知らせ|出展のご案内|出展決定|開催予定|will\s+exhibit",
     re.IGNORECASE,
@@ -262,8 +272,10 @@ _PUBLISH_DATE_LABEL_RE = re.compile(r"投稿日|公開日|掲載日|更新日|�
 
 
 def _is_exhibition_context(text: str) -> bool:
-    """『出店』単独等を除き、展示会文脈＋出展行為の両方を要求する。"""
-    return bool(_EXHIBITION_CONTEXT_RE.search(text) and _EXHIBITION_ACTION_RE.search(text))
+    """『出店』単独を除外しつつ、固有イベント名＋出展表現も許容する。"""
+    if not _EXHIBITION_ACTION_RE.search(text):
+        return False
+    return bool(_EXHIBITION_CONTEXT_RE.search(text) or _EXHIBITION_NAME_HINT_RE.search(text))
 
 
 def _date_context_score(text: str, start: int, end: int) -> int:
@@ -306,7 +318,7 @@ def _extract_event_name(text: str, focus_pos: int) -> str:
     for pat in [r"「([^」]{2,80})」", r"『([^』]{2,80})』", r"[\"“]([^\"”]{2,80})[\"”]"]:
         for match in re.finditer(pat, snippet):
             candidate = _clean_event_name(match.group(1))
-            if candidate and re.search(r"展|expo|exhibition|フェア|show|フォーラム|conference", candidate, re.IGNORECASE):
+            if candidate and re.search(r"展|expo|exhibition|フェア|show|フォーラム|conference|ceatec|edgetech|opie", candidate, re.IGNORECASE):
                 return candidate
 
     # 『CEATEC 2026に出展』『OPIE’25に出展』のような名称。
@@ -361,20 +373,15 @@ def _exhibition_evidence(
             continue
         saw_context = True
 
-        normalized = _normalize(page_text)
-        configured_hits = _hit_keywords(normalized, keywords)
         dates = _extract_full_dates_with_spans(page_text)
         upcoming_wording = bool(_UPCOMING_ACTION_RE.search(page_text))
         past_wording = bool(_PAST_ACTION_RE.search(page_text))
 
         if mode == "upcoming":
-            # 予定は『出展予定/出展します』等と将来開催日の両方を必須にする。
             if not upcoming_wording:
                 continue
             matched = [item for item in dates if today <= item[0] <= future_limit]
         else:
-            # 『出展します』告知の公開日を過去実績として誤採用しない。
-            # 過去実績は過去形/実績表記、または開催日・会期ラベル付き日付を必須にする。
             matched = [item for item in dates if cutoff <= item[0] < today]
             if not past_wording:
                 matched = [
@@ -388,7 +395,6 @@ def _exhibition_evidence(
         if not chosen:
             continue
         evidence_date, focus_pos = chosen
-        title = str(getattr(p, "title", "") or "").strip()
         url = str(getattr(p, "url", "") or "").strip()
         event_name = _extract_event_name(page_text, focus_pos)
 
