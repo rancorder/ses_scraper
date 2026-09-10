@@ -7,8 +7,10 @@ crawler/crawler.py - requests 軽量クローラー
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import heapq
 import logging
+import re
 import time
 from collections import defaultdict
 from itertools import count
@@ -71,12 +73,18 @@ _DISCOVERY_SIGNALS = {
     "company": 10,
     "corporate": 10,
     "about": 10,
-    "profile": 12,
-    "outline": 12,
+    "profile": 16,
+    "outline": 14,
     "organization": 14,
+    "location": 10,
+    "会社概要": 18,
     "会社": 10,
     "企業": 10,
     "組織": 14,
+    "拠点": 14,
+    "研究所": 18,
+    "技術センター": 18,
+    "テクニカルセンター": 18,
     "recruit": 18,
     "career": 18,
     "careers": 18,
@@ -134,21 +142,32 @@ def _canonical_url(url: str) -> str:
     return urlunparse((p.scheme.lower(), p.netloc.lower(), path, "", p.query, ""))
 
 
+def _html_fingerprint(html: str) -> str:
+    """リダイレクト先やsoft-404の同一HTMLをページ数に重複計上しない。"""
+    normalized = re.sub(r"\s+", " ", html).strip()
+    return hashlib.sha1(normalized.encode("utf-8", errors="ignore")).hexdigest()
+
+
 def _fetch_page_sync(session: requests.Session, url: str) -> PageResult:
-    """1ページを同期的に取得"""
+    """1ページを同期的に取得。PageResult.urlには最終リダイレクト先を保持する。"""
     start = time.monotonic()
     try:
         resp = session.get(url, timeout=TIMEOUT, allow_redirects=True)
         elapsed_ms = int((time.monotonic() - start) * 1000)
 
         if resp.status_code in (404, 410, 403):
-            return PageResult(url=url, status_code=resp.status_code)
+            return PageResult(url=resp.url or url, status_code=resp.status_code)
 
         if resp.encoding is None or resp.encoding.lower() == "iso-8859-1":
             resp.encoding = resp.apparent_encoding or "utf-8"
 
         html = resp.text
-        return PageResult(url=url, status_code=resp.status_code, html=html, elapsed_ms=elapsed_ms)
+        return PageResult(
+            url=resp.url or url,
+            status_code=resp.status_code,
+            html=html,
+            elapsed_ms=elapsed_ms,
+        )
 
     except requests.exceptions.Timeout:
         return PageResult(url=url, error="timeout")
@@ -158,7 +177,7 @@ def _fetch_page_sync(session: requests.Session, url: str) -> PageResult:
             if resp.encoding is None or resp.encoding.lower() == "iso-8859-1":
                 resp.encoding = resp.apparent_encoding or "utf-8"
             return PageResult(
-                url=url,
+                url=resp.url or url,
                 status_code=resp.status_code,
                 html=resp.text,
                 elapsed_ms=int((time.monotonic() - start) * 1000),
@@ -218,11 +237,12 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
     results: list[PageResult] = []
     _paths = paths if paths else TARGET_PATHS
 
-    # 優先度付きキュー。トップページを必ず最初に取得する。
     seq = count()
     heap: list[tuple[int, int, str]] = []
     queued: set[str] = set()
     attempted: set[str] = set()
+    successful_urls: set[str] = set()
+    successful_html: set[str] = set()
 
     def enqueue(url: str, priority: int) -> None:
         canonical = _canonical_url(url)
@@ -231,27 +251,30 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
         queued.add(canonical)
         heapq.heappush(heap, (-priority, next(seq), canonical))
 
+    # トップを最優先。固定シードは広いカテゴリを先に押さえ、
+    # その後に内部リンクの深掘りを行う。
     enqueue(_normalize_url(base_url, "/"), 1000)
     for path in _paths:
         if path == "/":
             continue
-        enqueue(_normalize_url(base_url, path), 5)
+        seed_url = _normalize_url(base_url, path)
+        enqueue(seed_url, 200 + _link_score(seed_url, path))
 
-    # 404候補が多数あるサイトでも無限に試さない。
-    max_attempts = max(cfg.max_pages_per_site * 5, 40)
+    # soft-404/リダイレクト重複を除外するため、試行数は成功ページ数より多めに確保。
+    max_attempts = max(cfg.max_pages_per_site * 8, 64)
     attempts = 0
 
     while heap and len(results) < cfg.max_pages_per_site and attempts < max_attempts:
-        _, _, url = heapq.heappop(heap)
-        queued.discard(url)
-        if url in attempted:
+        _, _, requested_url = heapq.heappop(heap)
+        queued.discard(requested_url)
+        if requested_url in attempted:
             continue
-        attempted.add(url)
+        attempted.add(requested_url)
         attempts += 1
 
-        result = _fetch_page_sync(session, url)
+        result = _fetch_page_sync(session, requested_url)
         if result.error:
-            log.debug(f"  スキップ ({result.error}): {url}")
+            log.debug(f"  スキップ ({result.error}): {requested_url}")
             if len(attempted) == 1:
                 break
             continue
@@ -260,12 +283,20 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
         if result.status_code != 200 or not result.html:
             continue
 
-        results.append(result)
+        final_url = _canonical_url(result.url or requested_url)
+        fp = _html_fingerprint(result.html)
 
-        # 成功ページからさらに関連する深いページを発見する。
-        # 例: /about -> /about/outline/executive, /recruit -> /recruit/jobs
-        discovered = _discover_candidate_links(result.html, url, base_url)
-        for score, discovered_url in discovered[:20]:
+        # 最終URLまたはHTMLが同一なら、1ページとしては数えない。
+        # ただし最終URLを基準にリンク解析は行う。
+        is_duplicate = final_url in successful_urls or fp in successful_html
+        if not is_duplicate:
+            result.url = final_url
+            results.append(result)
+            successful_urls.add(final_url)
+            successful_html.add(fp)
+
+        discovered = _discover_candidate_links(result.html, final_url, base_url)
+        for score, discovered_url in discovered[:30]:
             enqueue(discovered_url, 100 + score)
 
     domain = _extract_domain(base_url)
