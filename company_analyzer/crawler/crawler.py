@@ -120,7 +120,26 @@ _SKIP_SUFFIXES = (
     ".webp", ".mp4", ".mp3", ".doc", ".docx", ".xls", ".xlsx",
     ".ppt", ".pptx",
 )
-_ARCHIVE_HINTS = ("news", "topics", "press", "release", "event", "exhibition", "newinformation")
+_ARCHIVE_HINTS = (
+    "news", "topics", "press", "release", "event", "exhibition",
+    "newinformation",
+)
+
+# 技術Evidence 12ページ枠を維持しつつ、展示会/ニュース探索だけ追加で最大4ページ許容する。
+# これにより製品・採用ページが多い企業でも展示会一覧→年別/2ページ目→詳細へ到達しやすくする。
+_ARCHIVE_EXTRA_PAGES = 4
+_ARCHIVE_SEED_PATHS = (
+    "/news",
+    "/topics",
+    "/press",
+    "/release",
+    "/event",
+    "/events",
+    "/exhibition",
+    "/news_exhibition",
+    "/technology/event",
+    "/newinformation",
+)
 
 
 def _make_session() -> requests.Session:
@@ -210,17 +229,31 @@ def _link_score(url: str, anchor_text: str) -> int:
 
 
 def _is_archive_pagination(current_url: str, target_url: str, anchor_text: str) -> bool:
-    """ニュース/展示会等の一覧で2ページ目以降へ進むリンクを拾う。"""
+    """ニュース/展示会一覧のページ送り・年別アーカイブを拾う。"""
     current_lower = current_url.lower()
     if not any(hint in current_lower for hint in _ARCHIVE_HINTS):
         return False
-    target_path = urlparse(target_url).path.lower()
+
+    parsed = urlparse(target_url)
+    target_path = parsed.path.lower()
+    query = parsed.query.lower()
     anchor = re.sub(r"\s+", "", anchor_text.lower())
+
     if re.search(r"/page/\d+/?$", target_path):
         return True
     if anchor in {">", "»", "next", "次へ", "次のページ"}:
         return True
-    return bool(re.fullmatch(r"\d{1,3}", anchor))
+    if re.fullmatch(r"\d{1,3}", anchor):
+        return True
+
+    # イリソ等の「2026年」「y2026」「?year=2026」型アーカイブにも追従する。
+    if re.fullmatch(r"20\d{2}年?", anchor):
+        return True
+    if re.search(r"/(?:y)?20\d{2}(?:/|$)", target_path):
+        return True
+    if re.search(r"(?:^|&)(?:year|y)=20\d{2}(?:&|$)", query):
+        return True
+    return False
 
 
 def _discover_candidate_links(html: str, current_url: str, site_url: str) -> list[tuple[int, str]]:
@@ -249,7 +282,8 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
         anchor = a.get_text(" ", strip=True)[:120]
         score = _link_score(canonical, anchor)
         if _is_archive_pagination(current_url, canonical, anchor):
-            score = max(score, 40)
+            # 年別/2ページ目を通常の製品深掘りより優先する。
+            score = max(score, 80)
         if score <= 0:
             continue
         if score > found.get(canonical, 0):
@@ -278,16 +312,23 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
         heapq.heappush(heap, (-priority, next(seq), canonical))
 
     enqueue(_normalize_url(base_url, "/"), 1000)
+
+    # 展示会/ニュース一覧は専用シードとして先に確認する。
+    # 404はresultsを消費しないため、存在しないパスが多い企業でもページ枠は減らない。
+    for path in _ARCHIVE_SEED_PATHS:
+        enqueue(_normalize_url(base_url, path), 650 + _link_score(path, path))
+
     for path in _paths:
         if path == "/":
             continue
         seed_url = _normalize_url(base_url, path)
         enqueue(seed_url, 200 + _link_score(seed_url, path))
 
-    max_attempts = max(cfg.max_pages_per_site * 8, 64)
+    max_pages = cfg.max_pages_per_site + _ARCHIVE_EXTRA_PAGES
+    max_attempts = max(max_pages * 8, 80)
     attempts = 0
 
-    while heap and len(results) < cfg.max_pages_per_site and attempts < max_attempts:
+    while heap and len(results) < max_pages and attempts < max_attempts:
         _, _, requested_url = heapq.heappop(heap)
         queued.discard(requested_url)
         if requested_url in attempted:
@@ -317,8 +358,8 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
             successful_html.add(fp)
 
         discovered = _discover_candidate_links(result.html, final_url, base_url)
-        for score, discovered_url in discovered[:30]:
-            # 実ページから見つかった関連リンクを、残りの固定シードより優先して深掘りする。
+        for score, discovered_url in discovered[:40]:
+            # 実ページから見つかった関連リンクを固定シードより優先して深掘りする。
             enqueue(discovered_url, 300 + score)
 
     domain = _extract_domain(base_url)
