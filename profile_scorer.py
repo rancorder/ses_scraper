@@ -280,8 +280,11 @@ def _is_exhibition_context(text: str) -> bool:
 
 
 def _is_publish_date_context(text: str, start: int, end: int) -> bool:
-    around = text[max(0, start - 48):end + 20]
-    return bool(_PUBLISH_DATE_LABEL_RE.search(around))
+    """日付直前のラベルだけで公開日判定する。会期/開催日が近い場合は公開日扱いしない。"""
+    before = text[max(0, start - 24):start]
+    if _EVENT_DATE_LABEL_RE.search(before):
+        return False
+    return bool(_PUBLISH_DATE_LABEL_RE.search(before))
 
 
 def _date_context_score(text: str, start: int, end: int) -> int:
@@ -326,7 +329,6 @@ def _event_name_from_text(text: str, focus_pos: int) -> str:
             candidate = _clean_event_name(match.group(1))
             if not candidate:
                 continue
-            # 出展語近傍の引用名は、Smart Sensing等のように『展』を含まなくても許容する。
             distance = abs(match.start() - local_focus)
             if distance <= 260:
                 quoted.append((distance, candidate))
@@ -344,7 +346,6 @@ def _event_name_from_text(text: str, focus_pos: int) -> str:
         if len(candidate) >= 3:
             return candidate
 
-    # 『第32回 日本国際工作機械見本市(JIMTOF2024)』等を優先する。
     explicit = re.search(
         r"(第\s*\d+\s*回[^。]{2,70}?(?:展示会|見本市|フェア|ショー|展)(?:\([^)]{1,30}\))?)",
         snippet,
