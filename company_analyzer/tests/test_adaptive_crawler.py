@@ -53,6 +53,21 @@ def test_relevant_links_are_priority_sorted():
     assert links[0][1] == "https://example.com/technology/fpga-linux"
 
 
+def test_target_company_link_is_highest_priority_on_group_site():
+    html = """
+    <a href="/about/locations/tml.html">東京エレクトロン宮城株式会社</a>
+    <a href="/news/event/semicon.html">SEMICON 展示会</a>
+    <a href="/products/">製品情報</a>
+    """
+    links = _discover_candidate_links(
+        html,
+        "https://www.tel.co.jp/about/locations/",
+        "https://www.tel.co.jp/",
+        company_name="東京エレクトロン宮城株式会社",
+    )
+    assert links[0][1] == "https://www.tel.co.jp/about/locations/tml.html"
+
+
 def test_news_archive_pagination_advances_only_one_page():
     html = """
     <a href="/news/page/2/">2</a>
