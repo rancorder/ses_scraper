@@ -236,21 +236,37 @@ def _page_number(url: str) -> int | None:
 
 
 def _archive_year(target_url: str, anchor_text: str) -> int | None:
-    """年別アーカイブの年をURLまたはアンカーから取得する。"""
+    """年別アーカイブそのものの年をURLまたはアンカーから取得する。
+
+    /2026/08/26/9330 のような通常記事URLは年別アーカイブとみなさない。
+    """
     parsed = urlparse(target_url)
-    path = parsed.path.lower()
+    path = parsed.path.lower().rstrip("/")
     query = parsed.query.lower()
     anchor = re.sub(r"\s+", "", anchor_text.lower())
 
-    for pattern, value in [
-        (r"/(?:y)?(20\d{2})(?:/|$)", path),
-        (r"(?:^|&)(?:year|y)=(20\d{2})(?:&|$)", query),
-        (r"^(20\d{2})年?$", anchor),
-    ]:
-        m = re.search(pattern, value)
-        if m:
-            return int(m.group(1))
+    m = re.search(r"/(?:y)?(20\d{2})$", path)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r"(?:^|&)(?:year|y)=(20\d{2})(?:&|$)", query)
+    if m:
+        return int(m.group(1))
+
+    m = re.fullmatch(r"(20\d{2})年?", anchor)
+    if m:
+        return int(m.group(1))
+
     return None
+
+
+def _is_archive_context_url(url: str) -> bool:
+    """ニュース/展示会一覧または年別アーカイブかを判定する。"""
+    lower = url.lower()
+    if any(hint in lower for hint in _ARCHIVE_HINTS):
+        return True
+    path = urlparse(url).path.lower().rstrip("/")
+    return bool(re.search(r"/(?:y)?20\d{2}(?:/page/\d+)?$", path))
 
 
 def _archive_navigation_priority(current_url: str, target_url: str, anchor_text: str) -> int:
@@ -260,8 +276,7 @@ def _archive_navigation_priority(current_url: str, target_url: str, anchor_text:
     一気にキューへ積むと、直近記事へ到達する前にページ枠を消費する。
     そのためページ送りは現在ページ+1のみ、年別は今年～2年前のみ許可する。
     """
-    current_lower = current_url.lower()
-    if not any(hint in current_lower for hint in _ARCHIVE_HINTS):
+    if not _is_archive_context_url(current_url):
         return 0
 
     anchor = re.sub(r"\s+", "", anchor_text.lower())
