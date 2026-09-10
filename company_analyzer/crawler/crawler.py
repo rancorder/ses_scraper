@@ -125,9 +125,6 @@ _ARCHIVE_HINTS = (
     "news", "topics", "press", "release", "event", "exhibition",
     "newinformation",
 )
-
-# 技術Evidence 12ページ枠を維持しつつ、展示会/ニュース探索だけ追加で最大4ページ許容する。
-# これにより製品・採用ページが多い企業でも展示会一覧→年別/2ページ目→詳細へ到達しやすくする。
 _ARCHIVE_EXTRA_PAGES = 4
 _ARCHIVE_SEED_PATHS = (
     "/news",
@@ -141,10 +138,20 @@ _ARCHIVE_SEED_PATHS = (
     "/technology/event",
     "/newinformation",
 )
-
-# アーカイブ一覧内の営業トリガー記事。URLにnews等がなくてもアンカー本文で優先する。
+_COMPANY_SCOPE_SEED_PATHS = (
+    "/about/locations",
+    "/about/group",
+    "/company/group",
+    "/corporate/group",
+    "/group",
+)
 _ARCHIVE_TRIGGER_RE = re.compile(
     r"出展|展示会|見本市|フェア|ブース|exhibition|expo|trade\s*show|新製品|新商品",
+    re.IGNORECASE,
+)
+_LEGAL_FORM_RE = re.compile(
+    r"(?:株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|一般財団法人|\(株\)|（株）|㈱|"
+    r"inc\.?|co\.?\s*,?\s*ltd\.?|ltd\.?)",
     re.IGNORECASE,
 )
 
@@ -235,6 +242,31 @@ def _link_score(url: str, anchor_text: str) -> int:
     return score
 
 
+def _company_aliases_for_link(company_name: str) -> list[str]:
+    raw = str(company_name or "").strip()
+    if not raw:
+        return []
+    stripped = _LEGAL_FORM_RE.sub("", raw).strip()
+    aliases = [raw, stripped]
+    result: list[str] = []
+    for value in aliases:
+        compact = re.sub(r"[\s\u3000・･\-‐‑–—_/|｜()（）\[\]【】]", "", value.lower())
+        if len(compact) >= 3 and compact not in result:
+            result.append(compact)
+    return result
+
+
+def _target_company_link(anchor_text: str, company_name: str) -> bool:
+    if not company_name:
+        return False
+    anchor = re.sub(
+        r"[\s\u3000・･\-‐‑–—_/|｜()（）\[\]【】]",
+        "",
+        str(anchor_text or "").lower(),
+    )
+    return any(alias in anchor for alias in _company_aliases_for_link(company_name))
+
+
 def _page_number(url: str) -> int | None:
     path = urlparse(url).path.lower().rstrip("/")
     m = re.search(r"/page/(\d+)$", path)
@@ -242,10 +274,6 @@ def _page_number(url: str) -> int | None:
 
 
 def _archive_year(target_url: str, anchor_text: str) -> int | None:
-    """年別アーカイブそのものの年をURLまたはアンカーから取得する。
-
-    /2026/08/26/9330 のような通常記事URLは年別アーカイブとみなさない。
-    """
     parsed = urlparse(target_url)
     path = parsed.path.lower().rstrip("/")
     query = parsed.query.lower()
@@ -267,7 +295,6 @@ def _archive_year(target_url: str, anchor_text: str) -> int | None:
 
 
 def _is_archive_context_url(url: str) -> bool:
-    """ニュース/展示会一覧または年別アーカイブかを判定する。"""
     lower = url.lower()
     if any(hint in lower for hint in _ARCHIVE_HINTS):
         return True
@@ -276,11 +303,6 @@ def _is_archive_context_url(url: str) -> bool:
 
 
 def _archive_navigation_priority(current_url: str, target_url: str, anchor_text: str) -> int:
-    """一覧ページから必要なページ送り/年別だけを優先する。
-
-    遠いページ番号を一気にキューへ積まず、直近ページを優先する。
-    1→2ページ目は営業トリガー探索に重要なため、製品/採用ページより先に取得する。
-    """
     if not _is_archive_context_url(current_url):
         return 0
 
@@ -290,14 +312,12 @@ def _archive_navigation_priority(current_url: str, target_url: str, anchor_text:
     if target_page is not None:
         if target_page != current_page + 1:
             return 0
-        # 2ページ目を最優先。3ページ目までは追うが、それ以降は打ち切る。
         if target_page == 2:
             return 150
         if target_page == 3:
             return 55
         return 0
 
-    # 明示的な「次へ」はURL形式が/page/NでないCMSもあるため許可する。
     if anchor in {">", "»", "next", "次へ", "次のページ"}:
         if current_page == 1:
             return 150
@@ -320,12 +340,15 @@ def _archive_navigation_priority(current_url: str, target_url: str, anchor_text:
 
 
 def _is_archive_pagination(current_url: str, target_url: str, anchor_text: str) -> bool:
-    """互換用。必要な一覧ナビゲーションだけTrueを返す。"""
     return _archive_navigation_priority(current_url, target_url, anchor_text) > 0
 
 
-def _discover_candidate_links(html: str, current_url: str, site_url: str) -> list[tuple[int, str]]:
-    """HTMLから同一サイト内の評価関連リンクとニュース一覧ページを抽出する。"""
+def _discover_candidate_links(
+    html: str,
+    current_url: str,
+    site_url: str,
+    company_name: str = "",
+) -> list[tuple[int, str]]:
     try:
         soup = BeautifulSoup(html, "html.parser")
     except Exception:
@@ -354,12 +377,13 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
         if archive_priority:
             score = archive_priority
         elif _page_number(canonical) is not None or _archive_year(canonical, anchor) is not None:
-            # 遠いページ番号・古い年別リンクは通常リンクとして拾わない。
             score = 0
         elif archive_context and _ARCHIVE_TRIGGER_RE.search(anchor):
-            # 京写の /2026/06/08/9240 のようにURL自体にはnews/exhibitionがなくても、
-            # 一覧の見出しが展示会・出展を示す記事は最優先で本文確認する。
             score = max(score, 170)
+
+        # グループサイトでは対象会社名そのもののリンクを最優先する。
+        if _target_company_link(anchor, company_name):
+            score = max(score, 600)
 
         if score <= 0:
             continue
@@ -369,7 +393,12 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
     return sorted(((score, url) for url, score in found.items()), reverse=True)
 
 
-def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] | None = None) -> list[PageResult]:
+def crawl_site_sync(
+    base_url: str,
+    session: requests.Session,
+    paths: list[str] | None = None,
+    company_name: str = "",
+) -> list[PageResult]:
     cfg = CRAWL_CFG
     results: list[PageResult] = []
     _paths = paths if paths else TARGET_PATHS
@@ -388,10 +417,13 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
         queued.add(canonical)
         heapq.heappush(heap, (-priority, next(seq), canonical))
 
-    enqueue(_normalize_url(base_url, "/"), 1000)
+    # 入力が会社固有サブページなら、そのURL自体を失わず最初に取得する。
+    enqueue(base_url, 1000)
 
-    # 展示会/ニュース一覧は専用シードとして先に確認する。
-    # 404はresultsを消費しないため、存在しないパスが多い企業でもページ枠は減らない。
+    # 親会社/グループ共通ドメインから対象会社固有ページを見つけるための入口。
+    for path in _COMPANY_SCOPE_SEED_PATHS:
+        enqueue(_normalize_url(base_url, path), 850 + _link_score(path, path))
+
     for path in _ARCHIVE_SEED_PATHS:
         enqueue(_normalize_url(base_url, path), 650 + _link_score(path, path))
 
@@ -434,9 +466,13 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
             successful_urls.add(final_url)
             successful_html.add(fp)
 
-        discovered = _discover_candidate_links(result.html, final_url, base_url)
+        discovered = _discover_candidate_links(
+            result.html,
+            final_url,
+            base_url,
+            company_name=company_name,
+        )
         for score, discovered_url in discovered[:40]:
-            # 実ページから見つかった関連リンクを固定シードより優先して深掘りする。
             enqueue(discovered_url, 300 + score)
 
     domain = _extract_domain(base_url)
@@ -474,7 +510,7 @@ async def crawl_all(
             session = _make_session()
             try:
                 pages = await loop.run_in_executor(
-                    None, crawl_site_sync, url, session, _paths
+                    None, crawl_site_sync, url, session, _paths, name
                 )
                 results[url] = pages
                 page_count = len(pages)
