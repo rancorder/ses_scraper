@@ -93,6 +93,53 @@ def _company_mentioned(company_name: str, text: str) -> bool:
     return any(alias in haystack for alias in _company_aliases(company_name))
 
 
+_CORPORATE_IDENTITY_RE = re.compile(
+    r"株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|一般財団法人|"
+    r"\b(?:inc\.?|corp\.?|corporation|co\.?\s*,?\s*ltd\.?|ltd\.?)\b",
+    re.IGNORECASE,
+)
+
+
+def _page_identity_text(page) -> str:
+    parts = [str(getattr(page, "title", "") or "")]
+    for attr in ("h1", "h2"):
+        value = getattr(page, attr, []) or []
+        if isinstance(value, list):
+            parts.extend(str(v) for v in value[:3] if v)
+    return " ".join(parts)
+
+
+def _root_like_page(page) -> bool:
+    url = str(getattr(page, "url", "") or "")
+    path = re.sub(r"^https?://[^/]+", "", url.lower()).split("?", 1)[0]
+    path = path.rstrip("/") or "/"
+    return path in ("/", "/jp", "/en")
+
+
+def _formal_scoring_scope(pages: list, company_name: str) -> tuple[list, bool]:
+    """親会社/グループ共通サイトのEvidenceを正式点から除外する。
+
+    ルートページが対象会社名ではなく別法人を明示している場合だけ厳格モードに入り、
+    対象会社名を本文等で明示するページだけをR2正式採点に使う。
+    通常の自社サイトや法人名をタイトルに出さないサイトは従来どおり全ページを使う。
+    """
+    if not pages or not company_name:
+        return pages, False
+
+    root = next((p for p in pages if _root_like_page(p)), pages[0])
+    identity = _page_identity_text(root)
+    if _company_mentioned(company_name, identity):
+        return pages, False
+    if not _CORPORATE_IDENTITY_RE.search(identity):
+        return pages, False
+
+    scoped = [
+        p for p in pages
+        if _company_mentioned(company_name, _all_text_from_pages([p]))
+    ]
+    return scoped, True
+
+
 def _hit_keywords(text_lower: str, keywords: list[str]) -> list[str]:
     return [kw for kw in keywords if kw.lower() in text_lower]
 
@@ -296,7 +343,6 @@ def _clean_event_name(value: str) -> str:
 
 
 def _event_name_from_title(title: str) -> str:
-    """記事タイトルを最優先で展示会名へ正規化する。"""
     if not title:
         return ""
     core = re.split(r"[|｜]", title, maxsplit=1)[0].strip()
@@ -385,7 +431,6 @@ def _extract_event_name(text: str, focus_pos: int, title: str = "") -> str:
 
 
 def _is_generic_exhibition_listing(url: str) -> bool:
-    """一覧・トップページの日付をイベント日として誤結合しないための除外判定。"""
     path = re.sub(r"^https?://[^/]+", "", str(url).lower()).split("?", 1)[0]
     path = path.rstrip("/") or "/"
     if path == "/":
@@ -422,11 +467,6 @@ def _exhibition_evidence(
     recent_years: int = 2,
     company_name: str = "",
 ) -> tuple[bool, list[str], str]:
-    """展示会予定/実績をページ単位で判定する。
-
-    一覧ページやトップページは日付と別記事の出展文言が混線しやすいため、
-    Evidenceの確定には使わない。記事詳細または年別展示会ページを優先する。
-    """
     today = date.today()
     cutoff = today - timedelta(days=max(1, recent_years) * 365)
     future_limit = today + timedelta(days=730)
@@ -619,20 +659,12 @@ def _evaluate_axis(
 
     elif detection == "exhibition_upcoming":
         earned, hits, detail = _exhibition_evidence(
-            pages,
-            keywords,
-            "upcoming",
-            int(axis.get("recent_years", 2)),
-            company_name=company_name,
+            pages, keywords, "upcoming", int(axis.get("recent_years", 2)), company_name=company_name
         )
 
     elif detection == "exhibition_recent":
         earned, hits, detail = _exhibition_evidence(
-            pages,
-            keywords,
-            "recent",
-            int(axis.get("recent_years", 2)),
-            company_name=company_name,
+            pages, keywords, "recent", int(axis.get("recent_years", 2)), company_name=company_name
         )
 
     elif detection == "contact_department":
@@ -695,11 +727,23 @@ class ProfileScorer:
         parsed_pages: list,
     ) -> ProfileScore:
         all_text = _all_text_from_pages(parsed_pages)
+
+        formal_pages, scope_guarded = _formal_scoring_scope(parsed_pages, company_name)
+        formal_text = _all_text_from_pages(formal_pages)
         axes_results = [
-            _evaluate_axis(axis_def, parsed_pages, all_text, company_name=company_name)
+            _evaluate_axis(axis_def, formal_pages, formal_text, company_name=company_name)
             for axis_def in self.axes_defs
         ]
+        if scope_guarded:
+            for axis in axes_results:
+                scope_note = "対象会社スコープ外Evidence除外"
+                if axis.detail:
+                    axis.detail += f" / {scope_note}"
+                else:
+                    axis.detail = scope_note
 
+        # 採点外Evidenceは従来どおり全取得ページを参照する。
+        # 展示会項目は内部で対象会社一致/不一致を明示する。
         report_results: list[AxisResult] = []
         for report_def in self.report_defs:
             report_def = dict(report_def)
@@ -714,7 +758,7 @@ class ProfileScorer:
         for rule in bonus_rules:
             conditions = rule.get("condition", [])
             bonus = rule.get("bonus", 0)
-            if all(kw.lower() in _normalize(all_text) for kw in conditions):
+            if all(kw.lower() in _normalize(formal_text) for kw in conditions):
                 bonus_total += bonus
                 log.debug(f"  ボーナス適用: {rule.get('name', '')} +{bonus}点")
 
