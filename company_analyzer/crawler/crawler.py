@@ -43,8 +43,6 @@ HEADERS = {
 
 TIMEOUT = 12
 
-# T2 R2を含む企業スクリーニングでEvidenceが出やすいページ。
-# URLとアンカーテキストの双方を使うため、日本語サイトにも対応する。
 _DISCOVERY_SIGNALS = {
     "product": 16,
     "products": 16,
@@ -122,6 +120,7 @@ _SKIP_SUFFIXES = (
     ".webp", ".mp4", ".mp3", ".doc", ".docx", ".xls", ".xlsx",
     ".ppt", ".pptx",
 )
+_ARCHIVE_HINTS = ("news", "topics", "press", "release", "event", "exhibition", "newinformation")
 
 
 def _make_session() -> requests.Session:
@@ -158,13 +157,11 @@ def _canonical_url(url: str) -> str:
 
 
 def _html_fingerprint(html: str) -> str:
-    """リダイレクト先やsoft-404の同一HTMLをページ数に重複計上しない。"""
     normalized = re.sub(r"\s+", " ", html).strip()
     return hashlib.sha1(normalized.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def _fetch_page_sync(session: requests.Session, url: str) -> PageResult:
-    """1ページを同期的に取得。PageResult.urlには最終リダイレクト先を保持する。"""
     start = time.monotonic()
     try:
         resp = session.get(url, timeout=TIMEOUT, allow_redirects=True)
@@ -204,7 +201,6 @@ def _fetch_page_sync(session: requests.Session, url: str) -> PageResult:
 
 
 def _link_score(url: str, anchor_text: str) -> int:
-    """企業評価Evidenceとして有用そうな内部リンクへ優先度を付ける。"""
     haystack = f"{url.lower()} {anchor_text.lower()}"
     score = 0
     for signal, weight in _DISCOVERY_SIGNALS.items():
@@ -213,8 +209,22 @@ def _link_score(url: str, anchor_text: str) -> int:
     return score
 
 
+def _is_archive_pagination(current_url: str, target_url: str, anchor_text: str) -> bool:
+    """ニュース/展示会等の一覧で2ページ目以降へ進むリンクを拾う。"""
+    current_lower = current_url.lower()
+    if not any(hint in current_lower for hint in _ARCHIVE_HINTS):
+        return False
+    target_path = urlparse(target_url).path.lower()
+    anchor = re.sub(r"\s+", "", anchor_text.lower())
+    if re.search(r"/page/\d+/?$", target_path):
+        return True
+    if anchor in {">", "»", "next", "次へ", "次のページ"}:
+        return True
+    return bool(re.fullmatch(r"\d{1,3}", anchor))
+
+
 def _discover_candidate_links(html: str, current_url: str, site_url: str) -> list[tuple[int, str]]:
-    """HTMLから同一サイト内の評価関連リンクを抽出して優先度順に返す。"""
+    """HTMLから同一サイト内の評価関連リンクとニュース一覧ページを抽出する。"""
     try:
         soup = BeautifulSoup(html, "html.parser")
     except Exception:
@@ -238,6 +248,8 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
         canonical = _canonical_url(full)
         anchor = a.get_text(" ", strip=True)[:120]
         score = _link_score(canonical, anchor)
+        if _is_archive_pagination(current_url, canonical, anchor):
+            score = max(score, 40)
         if score <= 0:
             continue
         if score > found.get(canonical, 0):
@@ -247,7 +259,6 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
 
 
 def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] | None = None) -> list[PageResult]:
-    """1社分を固定パス + 関連内部リンク探索でクロールする。"""
     cfg = CRAWL_CFG
     results: list[PageResult] = []
     _paths = paths if paths else TARGET_PATHS
@@ -307,7 +318,8 @@ def crawl_site_sync(base_url: str, session: requests.Session, paths: list[str] |
 
         discovered = _discover_candidate_links(result.html, final_url, base_url)
         for score, discovered_url in discovered[:30]:
-            enqueue(discovered_url, 100 + score)
+            # 実ページから見つかった関連リンクを、残りの固定シードより優先して深掘りする。
+            enqueue(discovered_url, 300 + score)
 
     domain = _extract_domain(base_url)
     elapsed = time.monotonic() - _domain_last_access[domain]
@@ -324,10 +336,6 @@ async def crawl_all(
     concurrency: int | None = None,
     paths: list[str] | None = None,
 ) -> dict[str, list[PageResult]]:
-    """
-    全企業を並列クロール（requests版・スレッドプール使用）。
-    pathsは固定シードURLとして扱い、取得ページから関連内部リンクも探索する。
-    """
     cfg = CRAWL_CFG
     _paths = paths if paths else TARGET_PATHS
     max_workers = min(concurrency or cfg.concurrency, 8)
