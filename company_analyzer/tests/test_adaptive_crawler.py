@@ -111,9 +111,29 @@ def test_event_archive_year_navigation_is_recent_only():
     assert f"https://example.com/technology/event/y{two_years_ago}" in urls
     assert f"https://example.com/technology/event/y{old}" not in urls
 
-    # 今年の年別ページを前年より優先する。
     scores = {url: score for score, url in links}
     assert scores[f"https://example.com/technology/event/y{current_year}"] > scores[f"https://example.com/technology/event?year={previous}"]
+
+
+def test_year_archive_keeps_relevant_dated_article_and_next_page():
+    year = date.today().year
+    html = f"""
+    <a href="/{year}/08/26/9330/">自己株式処分のお知らせ</a>
+    <a href="/{year}/06/08/9240/">JPCAショー{year} 電子機器トータルソリューション展に出展します</a>
+    <a href="/{year}/page/2/">2</a>
+    <a href="/{year}/page/5/">5</a>
+    """
+    links = _discover_candidate_links(
+        html,
+        f"https://example.com/{year}/",
+        "https://example.com/",
+    )
+    urls = [url for _, url in links]
+
+    assert f"https://example.com/{year}/06/08/9240" in urls
+    assert f"https://example.com/{year}/page/2" in urls
+    assert f"https://example.com/{year}/08/26/9330" not in urls
+    assert f"https://example.com/{year}/page/5" not in urls
 
 
 def test_fetch_page_keeps_final_redirect_url():
