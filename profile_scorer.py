@@ -2,23 +2,6 @@
 profile_scorer.py - プロファイル駆動スコアリングエンジン
 =========================================================
 YAMLで定義した評価軸・配点に基づいて企業サイトをスコアリングする。
-既存の scoring_engine.py を置き換える案件プロファイル対応版。
-
-各評価軸の detection タイプ:
-  keyword_any               : いずれかのキーワードが1つでもヒットしたら加点
-  keyword_count             : min_hits 以上のキーワードがヒットしたら加点
-  keyword_and_pattern       : キーワード OR 正規表現パターンでヒット
-  keyword_groups_all        : keyword_groups の各グループで1件以上ヒットしたら加点
-  keyword_any_on_page       : 特定URLパスのページでキーワードがヒット
-  recent_keyword_any        : 同一ページでKWと直近N年の日付が確認できたら加点
-  recent_keyword_any_on_page: 対象ページ内でKWと直近N年の日付が同時に確認できたら加点
-  exhibition_upcoming       : 対象企業本人の展示会出展予定・開催日を確認
-  exhibition_recent         : 対象企業本人の直近N年の展示会出展実績を確認
-  contact_department        : 連絡手段と部署情報の両方を確認
-  url_exists                : url_signalsいずれかのURLが存在したら加点
-  contact                   : メールアドレスまたはお問い合わせフォームが存在
-  regex                     : 正規表現マッチ
-  manual                    : 自動判定せず要確認として出力
 """
 from __future__ import annotations
 
@@ -33,27 +16,25 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class AxisResult:
-    """1評価軸／調査項目の判定結果"""
-    id:           str
-    name:         str
-    points:       int
-    earned:       bool
-    score:        int
+    id: str
+    name: str
+    points: int
+    earned: bool
+    score: int
     hit_keywords: list[str] = field(default_factory=list)
-    detail:       str = ""
+    detail: str = ""
 
 
 @dataclass
 class ProfileScore:
-    """プロファイルスコアリングの結果"""
-    company_name:  str
-    company_url:   str
-    profile_name:  str
-    total_score:   int
-    raw_score:     int
-    score_cap:     int
-    judgment:      str
-    axes:          list[AxisResult] = field(default_factory=list)
+    company_name: str
+    company_url: str
+    profile_name: str
+    total_score: int
+    raw_score: int
+    score_cap: int
+    judgment: str
+    axes: list[AxisResult] = field(default_factory=list)
     report_fields: list[AxisResult] = field(default_factory=list)
 
     @property
@@ -78,21 +59,15 @@ class ProfileScore:
         return "\n".join(lines)
 
 
-# ════════════════════════════════════════════════════════
-#  テキスト解析ヘルパー
-# ════════════════════════════════════════════════════════
-
 def _normalize(text: str) -> str:
     return text.lower().replace("\u3000", " ").replace("\n", " ")
 
 
 def _compact(text: str) -> str:
-    """会社名照合用。空白・代表的な区切り記号を除去する。"""
     return re.sub(r"[\s\u3000・･\-‐‑–—_/|｜()（）\[\]【】]", "", text.lower())
 
 
 def _company_aliases(company_name: str) -> list[str]:
-    """対象企業本人かを照合するための保守的な会社名エイリアスを作る。"""
     if not company_name:
         return []
     raw = str(company_name).strip()
@@ -105,16 +80,15 @@ def _company_aliases(company_name: str) -> list[str]:
     ).strip()
     if stripped:
         aliases.append(stripped)
-    compacted = []
+    result: list[str] = []
     for alias in aliases:
         value = _compact(alias)
-        if len(value) >= 3 and value not in compacted:
-            compacted.append(value)
-    return compacted
+        if len(value) >= 3 and value not in result:
+            result.append(value)
+    return result
 
 
 def _company_mentioned(company_name: str, text: str) -> bool:
-    """ページ本文・タイトルに対象会社名（法人格除外可）が明記されているか。"""
     haystack = _compact(text)
     return any(alias in haystack for alias in _company_aliases(company_name))
 
@@ -134,7 +108,6 @@ def _hit_patterns(text: str, patterns: list[str]) -> bool:
 
 
 def _pages_with_path(pages: list, path_signals: list[str]) -> list:
-    """URLパスがシグナルに一致するページを返す"""
     result = []
     for p in pages:
         url_lower = getattr(p, "url", "").lower()
@@ -146,8 +119,7 @@ def _pages_with_path(pages: list, path_signals: list[str]) -> list:
 
 
 def _all_text_from_pages(pages: list) -> str:
-    """全ページのテキストを結合"""
-    parts = []
+    parts: list[str] = []
     for p in pages:
         for attr in ["title", "body_text", "meta_desc", "footer_text"]:
             val = getattr(p, attr, "")
@@ -161,16 +133,16 @@ def _all_text_from_pages(pages: list) -> str:
 
 
 def _has_contact(pages: list) -> bool:
-    """メールアドレスまたはフォームの存在確認"""
     all_text = _all_text_from_pages(pages).lower()
     if re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", all_text):
         return True
-    contact_words = ["お問い合わせ", "contact", "問い合わせフォーム", "inquiry"]
-    return any(w.lower() in all_text for w in contact_words)
+    return any(
+        word.lower() in all_text
+        for word in ["お問い合わせ", "contact", "問い合わせフォーム", "inquiry"]
+    )
 
 
 def _url_exists(pages: list, url_signals: list[str]) -> bool:
-    """いずれかのURLシグナルに一致するページが存在するか"""
     for p in pages:
         url_lower = getattr(p, "url", "").lower()
         for sig in url_signals:
@@ -180,7 +152,6 @@ def _url_exists(pages: list, url_signals: list[str]) -> bool:
 
 
 def _extract_full_dates_with_spans(text: str) -> list[tuple[date, int, int]]:
-    """本文から日単位で確定できる日付と文字位置を抽出する。"""
     found: dict[tuple[date, int, int], None] = {}
     patterns = [
         r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})",
@@ -189,10 +160,10 @@ def _extract_full_dates_with_spans(text: str) -> list[tuple[date, int, int]]:
     for pat in patterns:
         for match in re.finditer(pat, text):
             try:
-                d = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                parsed = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
             except ValueError:
                 continue
-            found[(d, match.start(), match.end())] = None
+            found[(parsed, match.start(), match.end())] = None
     return sorted(found, key=lambda item: (item[0], item[1]))
 
 
@@ -201,18 +172,16 @@ def _extract_full_dates(text: str) -> list[date]:
 
 
 def _contains_recent_date(text: str, recent_years: int) -> tuple[bool, str]:
-    """本文中の日付が概ね直近N年かを判定する。"""
     today = date.today()
     cutoff = today - timedelta(days=max(1, recent_years) * 365)
-
     full_dates = _extract_full_dates(text)
     recent_full = [d for d in full_dates if cutoff <= d <= today + timedelta(days=31)]
     if recent_full:
         return True, max(recent_full).isoformat()
 
     years = [int(y) for y in re.findall(r"(?<!\d)(20\d{2})(?!\d)", text)]
-    recent_year_floor = today.year - max(1, recent_years)
-    recent = [y for y in years if recent_year_floor <= y <= today.year]
+    floor = today.year - max(1, recent_years)
+    recent = [y for y in years if floor <= y <= today.year]
     if recent:
         return True, str(max(recent))
     return False, ""
@@ -223,7 +192,6 @@ def _recent_keyword_evidence(
     keywords: list[str],
     recent_years: int,
 ) -> tuple[bool, list[str], str]:
-    """同一ページ内でキーワードと直近日付が共存するEvidenceを探す。"""
     saw_hits: list[str] = []
     for p in pages:
         page_text = _all_text_from_pages([p])
@@ -238,7 +206,6 @@ def _recent_keyword_evidence(
             if url:
                 detail += f" / {url}"
             return True, list(dict.fromkeys(page_hits)), detail
-
     if saw_hits:
         return False, list(dict.fromkeys(saw_hits)), "対象KWあり／直近日付未確認"
     return False, [], "対象KW未確認"
@@ -255,7 +222,7 @@ _EXHIBITION_ACTION_RE = re.compile(
 _EXHIBITION_NAME_HINT_RE = re.compile(
     r"(?:「[^」]{2,80}」|『[^』]{2,80}』|[\"“][^\"”]{2,80}[\"”]|"
     r"[A-Za-z][A-Za-z0-9+.'&’・\- ]{2,50}(?:20\d{2}|[’']?\d{2})|"
-    r"[A-Za-z0-9０-９一-龥ぁ-んァ-ヶ・＆&+\-／/（）()'’ ]{2,70}(?:展示会|見本市|フェア|ショー|展))"
+    r"[A-Za-z0-9０-９一-龥ぁ-んァ-ヶー・＆&+\-／/（）()'’ ]{2,70}(?:展示会|見本市|フェア|ショー|展))"
     r"\s*(?:に|へ)?\s*出展",
     re.IGNORECASE,
 )
@@ -268,19 +235,28 @@ _PAST_ACTION_RE = re.compile(
     r"ご来場[^。\n]{0,80}(?:ありがとうございました|ありがとう|御礼)",
     re.IGNORECASE,
 )
-_EVENT_DATE_LABEL_RE = re.compile(r"開催日|会期|開催期間|日時|開催日時|event\s*date", re.IGNORECASE)
-_PUBLISH_DATE_LABEL_RE = re.compile(r"投稿日|公開日|掲載日|更新日|配信日|publish(?:ed)?", re.IGNORECASE)
+_EVENT_DATE_LABEL_RE = re.compile(
+    r"開催日|会期|開催期間|開催時期|日時|開催日時|event\s*date",
+    re.IGNORECASE,
+)
+_PUBLISH_DATE_LABEL_RE = re.compile(
+    r"投稿日|公開日|掲載日|更新日|配信日|publish(?:ed)?",
+    re.IGNORECASE,
+)
+_GENERIC_EVENT_TITLE_RE = re.compile(
+    r"^(?:お知らせ|ニュース|news|展示会|展示会情報|exhibition(?: information)?|"
+    r"20\d{2}年?(?:展示会情報|exhibition information)?)$",
+    re.IGNORECASE,
+)
 
 
 def _is_exhibition_context(text: str) -> bool:
-    """『出店』単独を除外しつつ、固有イベント名＋出展表現も許容する。"""
     if not _EXHIBITION_ACTION_RE.search(text):
         return False
     return bool(_EXHIBITION_CONTEXT_RE.search(text) or _EXHIBITION_NAME_HINT_RE.search(text))
 
 
 def _is_publish_date_context(text: str, start: int, end: int) -> bool:
-    """日付直前のラベルだけで公開日判定する。会期/開催日が近い場合は公開日扱いしない。"""
     before = text[max(0, start - 24):start]
     if _EVENT_DATE_LABEL_RE.search(before):
         return False
@@ -288,66 +264,85 @@ def _is_publish_date_context(text: str, start: int, end: int) -> bool:
 
 
 def _date_context_score(text: str, start: int, end: int) -> int:
-    """展示会開催日に近い日付ほど小さい値。公開日は強く減点する。"""
     action_positions = [m.start() for m in _EXHIBITION_ACTION_RE.finditer(text)]
     context_positions = [m.start() for m in _EXHIBITION_CONTEXT_RE.finditer(text)]
     positions = action_positions + context_positions
     distance = min((abs(start - pos) for pos in positions), default=5000)
-    before = text[max(0, start - 48):end + 12]
+    label_before = text[max(0, start - 32):start]
     score = distance
-    if _EVENT_DATE_LABEL_RE.search(before):
+    if _EVENT_DATE_LABEL_RE.search(label_before):
         score -= 1000
-    if _PUBLISH_DATE_LABEL_RE.search(before):
+    if _PUBLISH_DATE_LABEL_RE.search(label_before):
         score += 2000
     return score
 
 
-def _choose_event_date(text: str, candidates: list[tuple[date, int, int]]) -> tuple[date, int] | None:
+def _choose_event_date(
+    text: str,
+    candidates: list[tuple[date, int, int]],
+) -> tuple[date, int, int] | None:
     if not candidates:
         return None
-    ranked = sorted(candidates, key=lambda item: (_date_context_score(text, item[1], item[2]), item[0]))
-    chosen = ranked[0]
-    return chosen[0], chosen[1]
+    return min(
+        candidates,
+        key=lambda item: (_date_context_score(text, item[1], item[2]), item[0]),
+    )
 
 
 def _clean_event_name(value: str) -> str:
     value = re.sub(r"\s+", " ", value).strip(" \t\r\n|｜-‐–—:：")
-    value = re.sub(r"^(?:展示会)?(?:出展|開催)(?:のお知らせ|のご案内)?[「『\"“]?", "", value)
     value = value.strip("「」『』\"“” ")
-    return value[:80]
+    return value[:120]
+
+
+def _event_name_from_title(title: str) -> str:
+    """記事タイトルを最優先で展示会名へ正規化する。"""
+    if not title:
+        return ""
+    core = re.split(r"[|｜]", title, maxsplit=1)[0].strip()
+    core = re.split(r"\s+[‐–—-]\s+", core, maxsplit=1)[0].strip()
+
+    for pat in [r"「([^」]{2,100})」", r"『([^』]{2,100})』", r"[\"“]([^\"”]{2,100})[\"”]"]:
+        m = re.search(pat, core)
+        if m:
+            return _clean_event_name(m.group(1))
+
+    core = re.sub(
+        r"\s*(?:への?|に|へ)?\s*出展(?:の)?(?:お知らせ|ご案内|報告|実績)[。.]?\s*$",
+        "",
+        core,
+        flags=re.IGNORECASE,
+    )
+    core = re.sub(
+        r"\s*(?:への?|に|へ)?\s*出展(?:します|いたします|致します|しました|いたしました|致しました)?[。.]?\s*$",
+        "",
+        core,
+        flags=re.IGNORECASE,
+    )
+    core = _clean_event_name(core)
+    if not core or _GENERIC_EVENT_TITLE_RE.fullmatch(core) or len(core) < 3:
+        return ""
+    return core
 
 
 def _event_name_from_text(text: str, focus_pos: int) -> str:
-    start = max(0, focus_pos - 300)
-    end = min(len(text), focus_pos + 360)
+    start = max(0, focus_pos - 320)
+    end = min(len(text), focus_pos + 380)
     snippet = text[start:end]
     local_focus = focus_pos - start
 
     quoted: list[tuple[int, str]] = []
-    for pat in [r"「([^」]{2,80})」", r"『([^』]{2,80})』", r"[\"“]([^\"”]{2,80})[\"”]"]:
+    for pat in [r"「([^」]{2,100})」", r"『([^』]{2,100})』", r"[\"“]([^\"”]{2,100})[\"”]"]:
         for match in re.finditer(pat, snippet):
             candidate = _clean_event_name(match.group(1))
-            if not candidate:
-                continue
-            distance = abs(match.start() - local_focus)
-            if distance <= 260:
-                quoted.append((distance, candidate))
+            if candidate:
+                quoted.append((abs(match.start() - local_focus), candidate))
     if quoted:
         quoted.sort(key=lambda item: (item[0], len(item[1])))
         return quoted[0][1]
 
-    before_action = re.search(
-        r"([A-Za-z][A-Za-z0-9+.'&’・\- ]{1,50}(?:20\d{2}|[’']?\d{2})?)\s*(?:に|へ)?出展",
-        snippet,
-        re.IGNORECASE,
-    )
-    if before_action:
-        candidate = _clean_event_name(before_action.group(1))
-        if len(candidate) >= 3:
-            return candidate
-
     explicit = re.search(
-        r"(第\s*\d+\s*回[^。]{2,70}?(?:展示会|見本市|フェア|ショー|展)(?:\([^)]{1,30}\))?)",
+        r"(第\s*\d+\s*回[^。\n]{2,90}?(?:展示会|見本市|フェア|ショー|展)(?:\([^)]{1,30}\))?)",
         snippet,
         re.IGNORECASE,
     )
@@ -356,9 +351,20 @@ def _event_name_from_text(text: str, focus_pos: int) -> str:
         if candidate:
             return candidate
 
+    before_action = re.search(
+        r"([^。！？\n|｜]{3,100}?)(?:に|へ|への)?\s*出展(?:します|いたします|致します|しました|いたしました|致しました)",
+        snippet,
+        re.IGNORECASE,
+    )
+    if before_action:
+        candidate = _clean_event_name(before_action.group(1))
+        candidate = re.sub(r"^.*?(?:当社|弊社|当社は|弊社は)\s*", "", candidate)
+        if len(candidate) >= 3:
+            return candidate[-100:]
+
     event_matches: list[tuple[int, int, str]] = []
     for match in re.finditer(
-        r"([A-Za-z0-9０-９一-龥ぁ-んァ-ヶ・＆&+\-／/（）()'’ ]{2,55}(?:展示会|見本市|フェア(?:20\d{2})?|ショー(?:20\d{2})?|展(?:20\d{2})?))",
+        r"([A-Za-z0-9０-９一-龥ぁ-んァ-ヶー・＆&+\-／/（）()'’ ]{2,70}(?:展示会|見本市|フェア(?:20\d{2})?|ショー(?:20\d{2})?|展(?:20\d{2})?))",
         snippet,
         re.IGNORECASE,
     ):
@@ -372,12 +378,41 @@ def _event_name_from_text(text: str, focus_pos: int) -> str:
 
 
 def _extract_event_name(text: str, focus_pos: int, title: str = "") -> str:
-    """タイトルを優先し、次に開催日/出展語近傍から展示会名を抽出する。"""
-    if title and _is_exhibition_context(title):
-        name = _event_name_from_text(title, max(0, len(title) // 2))
-        if name:
-            return name
+    title_name = _event_name_from_title(title)
+    if title_name:
+        return title_name
     return _event_name_from_text(text, focus_pos)
+
+
+def _is_generic_exhibition_listing(url: str) -> bool:
+    """一覧・トップページの日付をイベント日として誤結合しないための除外判定。"""
+    path = re.sub(r"^https?://[^/]+", "", str(url).lower()).split("?", 1)[0]
+    path = path.rstrip("/") or "/"
+    if path == "/":
+        return True
+    patterns = [
+        r"/(?:news|topics|press|release|event|events|exhibition|news_exhibition|newinformation)(?:/page/\d+)?",
+        r"/(?:jp|en)/technology/event",
+        r"/20\d{2}(?:/page/\d+)?",
+    ]
+    return any(re.fullmatch(pattern, path) for pattern in patterns)
+
+
+def _exhibition_page_quality(url: str) -> int:
+    path = re.sub(r"^https?://[^/]+", "", str(url).lower()).split("?", 1)[0].rstrip("/")
+    if re.search(r"/(?:jp|en)/technology/event/y20\d{2}$", path):
+        return 2
+    return 3
+
+
+def _pick_exhibition_candidate(items: list[tuple], mode: str) -> tuple | None:
+    if not items:
+        return None
+    best_quality = max(item[0] for item in items)
+    same_quality = [item for item in items if item[0] == best_quality]
+    if mode == "upcoming":
+        return min(same_quality, key=lambda item: item[1])
+    return max(same_quality, key=lambda item: item[1])
 
 
 def _exhibition_evidence(
@@ -387,20 +422,18 @@ def _exhibition_evidence(
     recent_years: int = 2,
     company_name: str = "",
 ) -> tuple[bool, list[str], str]:
-    """展示会予定/実績を開催日・対象会社・展示会名のEvidence付きで判定する。
+    """展示会予定/実績をページ単位で判定する。
 
-    - 『出店』単独は展示会として扱わない。
-    - 日付周辺のローカル文脈で予定/実績を判別し、別イベント同士の混線を防ぐ。
-    - 過去の『出展します』告知は実績とはみなさず『過去出展告知（実績未確認）』として残す。
-    - 対象会社名がページ内で確認できない場合は参考候補として出すがearned=False。
+    一覧ページやトップページは日付と別記事の出展文言が混線しやすいため、
+    Evidenceの確定には使わない。記事詳細または年別展示会ページを優先する。
     """
     today = date.today()
     cutoff = today - timedelta(days=max(1, recent_years) * 365)
     future_limit = today + timedelta(days=730)
     saw_context = False
-    reference_candidates: list[str] = []
-    past_announcement_candidates: list[tuple[date, str]] = []
-    candidates: list[tuple[date, str, str, str]] = []
+    reference_candidates: list[tuple[int, date, str]] = []
+    past_announcement_candidates: list[tuple[int, date, str]] = []
+    candidates: list[tuple[int, date, str]] = []
 
     for p in pages:
         page_text = _all_text_from_pages([p])
@@ -409,62 +442,89 @@ def _exhibition_evidence(
         saw_context = True
         title = str(getattr(p, "title", "") or "").strip()
         url = str(getattr(p, "url", "") or "").strip()
+
+        if _is_generic_exhibition_listing(url):
+            continue
+
         direct_company = _company_mentioned(company_name, page_text) if company_name else True
+        date_candidates = [
+            item
+            for item in _extract_full_dates_with_spans(page_text)
+            if not _is_publish_date_context(page_text, item[1], item[2])
+        ]
+        chosen_date = _choose_event_date(page_text, date_candidates)
+        if chosen_date is None:
+            continue
+        event_date, start, end = chosen_date
 
-        for event_date, start, end in _extract_full_dates_with_spans(page_text):
-            if _is_publish_date_context(page_text, start, end):
+        local = page_text[max(0, start - 300):min(len(page_text), end + 340)]
+        if not _is_exhibition_context(local) and not _is_exhibition_context(title):
+            continue
+
+        title_upcoming = bool(_UPCOMING_ACTION_RE.search(title))
+        title_past = bool(_PAST_ACTION_RE.search(title))
+        local_upcoming = bool(_UPCOMING_ACTION_RE.search(local))
+        local_past = bool(_PAST_ACTION_RE.search(local))
+
+        if title_upcoming and not title_past:
+            local_upcoming = True
+            local_past = False
+        elif title_past:
+            local_past = True
+
+        quality = _exhibition_page_quality(url)
+        event_name = _extract_event_name(page_text, start, title=title)
+
+        if mode == "upcoming":
+            if not (today <= event_date <= future_limit and local_upcoming):
                 continue
-            local = page_text[max(0, start - 420):min(len(page_text), end + 520)]
-            if not _is_exhibition_context(local):
+            kind = "出展予定"
+        else:
+            if not (cutoff <= event_date < today):
                 continue
+            if not local_past:
+                if local_upcoming:
+                    parts = [f"過去出展告知:{event_date.isoformat()}"]
+                    parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
+                    parts.append("実績未確認")
+                    parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
+                    if url:
+                        parts.append(url)
+                    past_announcement_candidates.append((quality, event_date, " / ".join(parts)))
+                continue
+            kind = "出展実績"
 
-            local_upcoming = bool(_UPCOMING_ACTION_RE.search(local))
-            local_past = bool(_PAST_ACTION_RE.search(local))
-            if mode == "upcoming":
-                if not (today <= event_date <= future_limit and local_upcoming):
-                    continue
-            else:
-                if not (cutoff <= event_date < today):
-                    continue
-                if not local_past:
-                    if local_upcoming:
-                        event_name = _extract_event_name(page_text, start, title=title)
-                        parts = [f"過去出展告知:{event_date.isoformat()}"]
-                        parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
-                        parts.append("実績未確認")
-                        parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
-                        if url:
-                            parts.append(url)
-                        past_announcement_candidates.append((event_date, " / ".join(parts)))
-                    continue
+        parts = [f"{kind}:{event_date.isoformat()}"]
+        parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
+        parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
+        if url:
+            parts.append(url)
+        detail = " / ".join(parts)
 
-            event_name = _extract_event_name(page_text, start, title=title)
-            kind = "出展予定" if mode == "upcoming" else "出展実績"
-            parts = [f"{kind}:{event_date.isoformat()}"]
-            parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
-            parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
-            if url:
-                parts.append(url)
-            detail = " / ".join(parts)
+        if direct_company:
+            candidates.append((quality, event_date, detail))
+        else:
+            reference_candidates.append((quality, event_date, "参考候補 / " + detail))
 
-            if direct_company:
-                candidates.append((event_date, event_name, url, detail))
-            else:
-                reference_candidates.append("参考候補 / " + detail)
+    chosen = _pick_exhibition_candidate(candidates, mode)
+    if chosen:
+        return True, [], chosen[2]
 
-    if candidates:
-        chosen = min(candidates, key=lambda x: x[0]) if mode == "upcoming" else max(candidates, key=lambda x: x[0])
-        return True, [], chosen[3]
+    reference = _pick_exhibition_candidate(reference_candidates, mode)
+    if reference:
+        return False, [], reference[2]
 
-    if reference_candidates:
-        return False, [], reference_candidates[0]
-
-    if mode == "recent" and past_announcement_candidates:
-        chosen = max(past_announcement_candidates, key=lambda item: item[0])
-        return False, [], chosen[1]
+    if mode == "recent":
+        past_announcement = _pick_exhibition_candidate(past_announcement_candidates, mode)
+        if past_announcement:
+            return False, [], past_announcement[2]
 
     if saw_context:
-        label = "将来の開催日＋出展予定表現" if mode == "upcoming" else f"直近{recent_years}年の開催日＋出展後Evidence"
+        label = (
+            "将来の開催日＋出展予定表現"
+            if mode == "upcoming"
+            else f"直近{recent_years}年の開催日＋出展後Evidence"
+        )
         return False, [], f"展示会文脈あり／{label}未確認"
     return False, [], "展示会Evidence未確認"
 
@@ -473,7 +533,6 @@ def _contact_department_evidence(
     pages: list,
     department_keywords: list[str],
 ) -> tuple[bool, list[str], str]:
-    """問い合わせ手段と営業対象になり得る部署情報の両方を確認する。"""
     if not _has_contact(pages):
         return False, [], "連絡手段未確認"
     all_text = _normalize(_all_text_from_pages(pages))
@@ -483,31 +542,26 @@ def _contact_department_evidence(
     return True, list(dict.fromkeys(hits)), "連絡手段＋部署情報を確認"
 
 
-# ════════════════════════════════════════════════════════
-#  軸ごとの判定
-# ════════════════════════════════════════════════════════
-
 def _evaluate_axis(
     axis: dict[str, Any],
     pages: list,
     all_text: str,
     company_name: str = "",
 ) -> AxisResult:
-    """1評価軸または調査項目を判定してAxisResultを返す"""
-    ax_id      = axis.get("id", "")
-    ax_name    = axis.get("name", ax_id)
-    ax_points  = int(axis.get("points", 0))
-    detection  = axis.get("detection", "keyword_any")
-    keywords   = axis.get("keywords", [])
-    patterns   = axis.get("patterns", [])
-    url_sigs   = axis.get("url_signals", [])
-    min_hits   = axis.get("min_hits", 1)
-    tgt_pages  = axis.get("target_pages", [])
+    ax_id = axis.get("id", "")
+    ax_name = axis.get("name", ax_id)
+    ax_points = int(axis.get("points", 0))
+    detection = axis.get("detection", "keyword_any")
+    keywords = axis.get("keywords", [])
+    patterns = axis.get("patterns", [])
+    url_sigs = axis.get("url_signals", [])
+    min_hits = axis.get("min_hits", 1)
+    tgt_pages = axis.get("target_pages", [])
 
     text_lower = _normalize(all_text)
-    earned     = False
+    earned = False
     hits: list[str] = []
-    detail     = ""
+    detail = ""
 
     if detection == "keyword_any":
         hits = _hit_keywords(text_lower, keywords)
@@ -537,9 +591,7 @@ def _evaluate_axis(
             group_hits.append(gh)
             hits.extend(gh)
         earned = bool(groups) and all(group_hits)
-        detail = " / ".join(
-            f"G{i + 1}:{len(gh)}件" for i, gh in enumerate(group_hits)
-        )
+        detail = " / ".join(f"G{i + 1}:{len(gh)}件" for i, gh in enumerate(group_hits))
 
     elif detection == "keyword_any_on_page":
         target = _pages_with_path(pages, tgt_pages) if tgt_pages else pages
@@ -553,18 +605,14 @@ def _evaluate_axis(
 
     elif detection == "recent_keyword_any":
         earned, hits, detail = _recent_keyword_evidence(
-            pages,
-            keywords,
-            int(axis.get("recent_years", 2)),
+            pages, keywords, int(axis.get("recent_years", 2))
         )
 
     elif detection == "recent_keyword_any_on_page":
         target = _pages_with_path(pages, tgt_pages) if tgt_pages else pages
         if target:
             earned, hits, detail = _recent_keyword_evidence(
-                target,
-                keywords,
-                int(axis.get("recent_years", 2)),
+                target, keywords, int(axis.get("recent_years", 2))
             )
         else:
             detail = "対象ページなし"
@@ -593,12 +641,12 @@ def _evaluate_axis(
     elif detection == "regex":
         pattern = axis.get("pattern", "")
         try:
-            m = re.search(pattern, all_text) if pattern else None
-            earned = m is not None
+            match = re.search(pattern, all_text) if pattern else None
+            earned = match is not None
             if earned:
-                detail = f"正規表現マッチ: {m.group()[:50]}"
-        except re.error as e:
-            detail = f"正規表現エラー: {e}"
+                detail = f"正規表現マッチ: {match.group()[:50]}"
+        except re.error as exc:
+            detail = f"正規表現エラー: {exc}"
 
     elif detection == "keyword_all":
         hits = _hit_keywords(text_lower, keywords)
@@ -630,13 +678,7 @@ def _evaluate_axis(
     )
 
 
-# ════════════════════════════════════════════════════════
-#  ProfileScorer クラス
-# ════════════════════════════════════════════════════════
-
 class ProfileScorer:
-    """YAMLプロファイルの scoring_axes に基づいてスコアリングする。"""
-
     def __init__(self, profile) -> None:
         self.profile = profile
         self.axes_defs = getattr(profile, "scoring_axes", [])
@@ -653,12 +695,10 @@ class ProfileScorer:
         parsed_pages: list,
     ) -> ProfileScore:
         all_text = _all_text_from_pages(parsed_pages)
-        axes_results: list[AxisResult] = []
-
-        for axis_def in self.axes_defs:
-            axes_results.append(
-                _evaluate_axis(axis_def, parsed_pages, all_text, company_name=company_name)
-            )
+        axes_results = [
+            _evaluate_axis(axis_def, parsed_pages, all_text, company_name=company_name)
+            for axis_def in self.axes_defs
+        ]
 
         report_results: list[AxisResult] = []
         for report_def in self.report_defs:
@@ -669,7 +709,6 @@ class ProfileScorer:
             )
 
         raw_score = sum(ax.score for ax in axes_results)
-
         bonus_total = 0
         bonus_rules = getattr(self.profile, "bonus_rules", []) or []
         for rule in bonus_rules:
@@ -677,7 +716,7 @@ class ProfileScorer:
             bonus = rule.get("bonus", 0)
             if all(kw.lower() in _normalize(all_text) for kw in conditions):
                 bonus_total += bonus
-                log.debug(f"  ボーナス適用: {rule.get('name','')} +{bonus}点")
+                log.debug(f"  ボーナス適用: {rule.get('name', '')} +{bonus}点")
 
         raw_score += bonus_total
         total_score = min(raw_score, self.score_cap)
@@ -709,5 +748,4 @@ class ProfileScorer:
 
 
 def create_scorer_from_profile(profile) -> ProfileScorer:
-    """Profile オブジェクトから ProfileScorer を生成"""
     return ProfileScorer(profile)
