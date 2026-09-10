@@ -459,6 +459,7 @@ def _is_generic_exhibition_listing(url: str) -> bool:
     patterns = [
         r"/(?:news|topics|press|release|event|events|exhibition|news_exhibition|newinformation)(?:/page/\d+)?",
         r"/(?:jp|en)/technology/event",
+        r"/recruit-news(?:/recruit-news_category/[^/]+|/date/20\\d{2}/\\d{1,2})?",
         r"/20\d{2}(?:/page/\d+)?",
     ]
     return any(re.fullmatch(pattern, path) for pattern in patterns)
@@ -481,6 +482,72 @@ def _pick_exhibition_candidate(items: list[tuple], mode: str) -> tuple | None:
     return max(same_quality, key=lambda item: item[1])
 
 
+def _infer_exhibition_year(title: str, url: str, text: str) -> int | None:
+    """年が省略された「6月10日」等を補完するための年を推定する。"""
+    for source in (title, url):
+        years = re.findall(r"(?<!\d)(20\d{2})(?!\d)", str(source or ""))
+        if years:
+            return int(years[-1])
+
+    full_dates = _extract_full_dates(text)
+    if full_dates:
+        recent = [
+            d.year for d in full_dates
+            if date.today().year - 2 <= d.year <= date.today().year + 1
+        ]
+        if recent:
+            return max(recent)
+    return None
+
+
+def _exhibition_date_candidates(
+    text: str,
+    title: str = "",
+    url: str = "",
+) -> list[tuple[date, int, int]]:
+    """完全日付に加え、ページ文脈から年を補完した月日も抽出する。"""
+    full = _extract_full_dates_with_spans(text)
+    found: dict[tuple[date, int, int], None] = {
+        item: None for item in full
+    }
+
+    inferred_year = _infer_exhibition_year(title, url, text)
+    if inferred_year is None:
+        return list(found)
+
+    for match in re.finditer(r"(?<!\d)(\d{1,2})月\s*(\d{1,2})日", text):
+        # 「2026年6月10日」の月日部分を二重登録しない。
+        if any(start <= match.start() < end for _, start, end in full):
+            continue
+        try:
+            parsed = date(
+                inferred_year,
+                int(match.group(1)),
+                int(match.group(2)),
+            )
+        except ValueError:
+            continue
+        found[(parsed, match.start(), match.end())] = None
+
+    return sorted(found, key=lambda item: (item[0], item[1]))
+
+
+def _event_date_context_tier(text: str, start: int) -> int:
+    """イベント開催日らしさ。会期ラベルを最優先する。"""
+    before = text[max(0, start - 48):start]
+    if _EVENT_DATE_LABEL_RE.search(before):
+        return 2
+
+    positions = (
+        [m.start() for m in _EXHIBITION_ACTION_RE.finditer(text)]
+        + [m.start() for m in _EXHIBITION_CONTEXT_RE.finditer(text)]
+    )
+    distance = min((abs(start - pos) for pos in positions), default=99999)
+    if distance <= 500:
+        return 1
+    return 0
+
+
 def _exhibition_evidence(
     pages: list,
     keywords: list[str],
@@ -491,6 +558,7 @@ def _exhibition_evidence(
     today = date.today()
     cutoff = today - timedelta(days=max(1, recent_years) * 365)
     future_limit = today + timedelta(days=730)
+
     saw_context = False
     reference_candidates: list[tuple[int, date, str]] = []
     past_announcement_candidates: list[tuple[int, date, str]] = []
@@ -500,83 +568,151 @@ def _exhibition_evidence(
         page_text = _all_text_from_pages([p])
         if not _is_exhibition_context(page_text):
             continue
+
         saw_context = True
         title = str(getattr(p, "title", "") or "").strip()
         url = str(getattr(p, "url", "") or "").strip()
 
+        # 一覧・カテゴリページそのものを展示会実績にしない。
         if _is_generic_exhibition_listing(url):
             continue
 
-        direct_company = _company_mentioned(company_name, page_text) if company_name else True
+        direct_company = (
+            _company_mentioned(company_name, page_text)
+            if company_name else True
+        )
+
         date_candidates = [
             item
-            for item in _extract_full_dates_with_spans(page_text)
-            if not _is_publish_date_context(page_text, item[1], item[2])
+            for item in _exhibition_date_candidates(
+                page_text,
+                title=title,
+                url=url,
+            )
+            if not _is_publish_date_context(
+                page_text, item[1], item[2]
+            )
         ]
-        chosen_date = _choose_event_date(page_text, date_candidates)
-        if chosen_date is None:
-            continue
-        event_date, start, end = chosen_date
 
-        local = page_text[max(0, start - 300):min(len(page_text), end + 340)]
-        if not _is_exhibition_context(local) and not _is_exhibition_context(title):
-            continue
+        for event_date, start, end in date_candidates:
+            # 複数イベントを持つ年別一覧にも対応するため、日付ごとに評価する。
+            local = page_text[
+                max(0, start - 700):
+                min(len(page_text), end + 800)
+            ]
 
-        title_upcoming = bool(_UPCOMING_ACTION_RE.search(title))
-        title_past = bool(_PAST_ACTION_RE.search(title))
-        local_upcoming = bool(_UPCOMING_ACTION_RE.search(local))
-        local_past = bool(_PAST_ACTION_RE.search(local))
-
-        if title_upcoming and not title_past:
-            local_upcoming = True
-            local_past = False
-        elif title_past:
-            local_past = True
-
-        quality = _exhibition_page_quality(url)
-        event_name = _extract_event_name(page_text, start, title=title)
-
-        if mode == "upcoming":
-            if not (today <= event_date <= future_limit and local_upcoming):
+            if (
+                not _is_exhibition_context(local)
+                and not _is_exhibition_context(title)
+            ):
                 continue
-            kind = "出展予定"
-        else:
-            if not (cutoff <= event_date < today):
-                continue
-            if not local_past:
-                if local_upcoming:
-                    parts = [f"過去出展告知:{event_date.isoformat()}"]
-                    parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
-                    parts.append("実績未確認")
-                    parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
-                    if url:
-                        parts.append(url)
-                    past_announcement_candidates.append((quality, event_date, " / ".join(parts)))
-                continue
-            kind = "出展実績"
 
-        parts = [f"{kind}:{event_date.isoformat()}"]
-        parts.append(f"展示会:{event_name}" if event_name else "展示会名未抽出")
-        parts.append("対象会社:一致" if direct_company else "対象会社:一致未確認")
-        if url:
-            parts.append(url)
-        detail = " / ".join(parts)
+            title_upcoming = bool(_UPCOMING_ACTION_RE.search(title))
+            title_past = bool(_PAST_ACTION_RE.search(title))
+            local_upcoming = bool(_UPCOMING_ACTION_RE.search(local))
+            local_past = bool(_PAST_ACTION_RE.search(local))
 
-        if direct_company:
-            candidates.append((quality, event_date, detail))
-        else:
-            reference_candidates.append((quality, event_date, "参考候補 / " + detail))
+            if title_upcoming and not title_past:
+                local_upcoming = True
+                local_past = False
+            elif title_past:
+                local_past = True
+
+            # 詳細ページ > 年別一覧、かつ「会期」等の開催日文脈を優先。
+            quality = (
+                _exhibition_page_quality(url) * 10
+                + _event_date_context_tier(page_text, start)
+            )
+
+            event_name = _extract_event_name(
+                page_text,
+                start,
+                title=title,
+            )
+
+            if mode == "upcoming":
+                if not (
+                    today <= event_date <= future_limit
+                    and local_upcoming
+                ):
+                    continue
+                kind = "出展予定"
+
+            else:
+                if not (cutoff <= event_date < today):
+                    continue
+
+                # 過去の日付だが文章が「出展します」のままなら、
+                # 実績確定とはせず「過去出展告知」とする。
+                if not local_past:
+                    if local_upcoming:
+                        parts = [
+                            f"過去出展告知:{event_date.isoformat()}"
+                        ]
+                        parts.append(
+                            f"展示会:{event_name}"
+                            if event_name else "展示会名未抽出"
+                        )
+                        parts.append("実績未確認")
+                        parts.append(
+                            "対象会社:一致"
+                            if direct_company
+                            else "対象会社:一致未確認"
+                        )
+                        if url:
+                            parts.append(url)
+
+                        past_announcement_candidates.append(
+                            (quality, event_date, " / ".join(parts))
+                        )
+                    continue
+
+                kind = "出展実績"
+
+            parts = [f"{kind}:{event_date.isoformat()}"]
+            parts.append(
+                f"展示会:{event_name}"
+                if event_name else "展示会名未抽出"
+            )
+            parts.append(
+                "対象会社:一致"
+                if direct_company
+                else "対象会社:一致未確認"
+            )
+            if url:
+                parts.append(url)
+
+            detail = " / ".join(parts)
+
+            if direct_company:
+                candidates.append(
+                    (quality, event_date, detail)
+                )
+            else:
+                reference_candidates.append(
+                    (
+                        quality,
+                        event_date,
+                        "参考候補 / " + detail,
+                    )
+                )
 
     chosen = _pick_exhibition_candidate(candidates, mode)
     if chosen:
         return True, [], chosen[2]
 
-    reference = _pick_exhibition_candidate(reference_candidates, mode)
+    reference = _pick_exhibition_candidate(
+        reference_candidates,
+        mode,
+    )
     if reference:
         return False, [], reference[2]
 
     if mode == "recent":
-        past_announcement = _pick_exhibition_candidate(past_announcement_candidates, mode)
+        past_announcement = _pick_exhibition_candidate(
+            past_announcement_candidates,
+            mode,
+        )
         if past_announcement:
             return False, [], past_announcement[2]
 
@@ -587,8 +723,8 @@ def _exhibition_evidence(
             else f"直近{recent_years}年の開催日＋出展後Evidence"
         )
         return False, [], f"展示会文脈あり／{label}未確認"
-    return False, [], "展示会Evidence未確認"
 
+    return False, [], "展示会Evidence未確認"
 
 def _contact_department_evidence(
     pages: list,

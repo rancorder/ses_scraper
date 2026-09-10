@@ -366,3 +366,89 @@ def test_contact_department_requires_both_contact_and_department():
         [_page("https://example.com/contact", "お問い合わせはこちら")],
     )
     assert _report(contact_only, "contact_department_info").earned is False
+
+
+def test_multi_event_year_page_uses_latest_confirmed_event():
+    profile = load_profile("t2_lab")
+    older = date.today() - timedelta(days=120)
+    newer = date.today() - timedelta(days=30)
+
+    pages = [
+        _page(
+            "https://example.com/jp/technology/event/y2026",
+            (
+                f'Example株式会社 {older.isoformat()} に開催された'
+                f'「OLD EXPO」に出展いたしました。 '
+                f'Example株式会社 {newer.isoformat()} に開催された'
+                f'「NEW EXPO」に出展いたしました。'
+            ),
+            title="2026年展示会情報｜Example株式会社",
+        )
+    ]
+
+    result = ProfileScorer(profile).score(
+        "Example株式会社",
+        "https://example.com",
+        pages,
+    )
+    recent = _report(result, "exhibition_recent")
+
+    assert recent.earned is True
+    assert newer.isoformat() in recent.detail
+    assert "NEW EXPO" in recent.detail
+
+
+def test_yearless_event_date_is_inferred_from_event_title():
+    profile = load_profile("t2_lab")
+    event_date = date.today() - timedelta(days=20)
+    published = event_date - timedelta(days=50)
+
+    pages = [
+        _page(
+            "https://example.com/news/expo",
+            (
+                f"Example株式会社 {published.isoformat()} "
+                f"展示会に出展いたします。"
+                f"会期 {event_date.month}月{event_date.day}日 "
+            ),
+            title=f"TEST EXPO {event_date.year} 出展のご案内",
+        )
+    ]
+
+    result = ProfileScorer(profile).score(
+        "Example株式会社",
+        "https://example.com",
+        pages,
+    )
+    recent = _report(result, "exhibition_recent")
+
+    assert recent.earned is False
+    assert "過去出展告知:" in recent.detail
+    assert event_date.isoformat() in recent.detail
+
+
+def test_recruit_news_category_is_not_event_detail():
+    profile = load_profile("t2_lab")
+    past = (date.today() - timedelta(days=30)).isoformat()
+
+    pages = [
+        _page(
+            "https://example.com/recruit-news/recruit-news_category/event",
+            (
+                f'Example株式会社 {past} '
+                f'「Smart Sensing 2026」に出展しました。'
+            ),
+            title="イベント",
+        )
+    ]
+
+    result = ProfileScorer(profile).score(
+        "Example株式会社",
+        "https://example.com",
+        pages,
+    )
+
+    assert _report(
+        result,
+        "exhibition_recent",
+    ).earned is False

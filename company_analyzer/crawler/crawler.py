@@ -135,6 +135,7 @@ _ARCHIVE_SEED_PATHS = (
     "/events",
     "/exhibition",
     "/news_exhibition",
+    "/recruit-news",
     "/technology/event",
     "/newinformation",
 )
@@ -335,11 +336,11 @@ def _archive_navigation_priority(current_url: str, target_url: str, anchor_text:
     if year is not None:
         current_year = date.today().year
         if year == current_year:
-            return 140
+            return 260
         if year == current_year - 1:
-            return 18
+            return 230
         if year == current_year - 2:
-            return 12
+            return 200
         return 0
 
     return 0
@@ -385,7 +386,23 @@ def _discover_candidate_links(
         elif _page_number(canonical) is not None or _archive_year(canonical, anchor) is not None:
             score = 0
         elif archive_context and _ARCHIVE_TRIGGER_RE.search(anchor):
-            score = max(score, 170)
+            # 直近2年より明らかに古い展示会記事で
+            # クロール枠を消費しない。
+            anchor_years = [
+                int(y)
+                for y in re.findall(
+                    r"(?<!\d)(20\d{2})(?!\d)",
+                    anchor,
+                )
+            ]
+            current_year = date.today().year
+            if (
+                anchor_years
+                and max(anchor_years) < current_year - 2
+            ):
+                score = 0
+            else:
+                score = max(score, 170)
 
         # グループサイトでは対象会社名そのもののリンクを最優先する。
         if _target_company_link(anchor, company_name):

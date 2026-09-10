@@ -185,3 +185,25 @@ def test_subpage_input_derives_origin_root():
         _origin_root_url("https://www.tel.co.jp/about/locations/tml.html")
         == "https://www.tel.co.jp/"
     )
+
+
+def test_recent_year_archive_beats_old_exhibition_article():
+    current_year = date.today().year
+    recent_year = current_year - 2
+
+    html = f"""
+    <a href="/{recent_year}/">{recent_year}</a>
+    <a href="/news_exhibition/post-old/">
+      メカトロテックジャパン2015 出展
+    </a>
+    """
+
+    links = _discover_candidate_links(
+        html,
+        "https://example.com/news_exhibition/",
+        "https://example.com/",
+    )
+    urls = [url for _, url in links]
+
+    assert f"https://example.com/{recent_year}" in urls
+    assert not any("post-old" in url for url in urls)
