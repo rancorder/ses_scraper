@@ -11,7 +11,9 @@ def test_discovers_relevant_nested_links_same_domain_only():
       <a href="/technology/fpga/">FPGA開発技術</a>
       <a href="/recruit/jobs/embedded/">組込み技術者採用</a>
       <a href="/news/exhibition/ceatec/">展示会出展情報</a>
+      <a href="/events/material-fair/">複合材料フェア出展</a>
       <a href="/contact/">お問い合わせ</a>
+      <a href="/store/tokyo/">新店舗を出店</a>
       <a href="/privacy/">プライバシー</a>
       <a href="https://other.example.com/products">他社製品</a>
       <a href="/catalog/test.pdf">PDF</a>
@@ -28,7 +30,9 @@ def test_discovers_relevant_nested_links_same_domain_only():
     assert "https://www.example.com/technology/fpga" in urls
     assert "https://www.example.com/recruit/jobs/embedded" in urls
     assert "https://www.example.com/news/exhibition/ceatec" in urls
+    assert "https://www.example.com/events/material-fair" in urls
     assert "https://www.example.com/contact" in urls
+    assert not any("/store/tokyo" in url for url in urls)
     assert not any("privacy" in url for url in urls)
     assert not any("other.example.com" in url for url in urls)
     assert not any(url.endswith(".pdf") for url in urls)
