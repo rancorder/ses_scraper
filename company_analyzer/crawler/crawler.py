@@ -142,6 +142,12 @@ _ARCHIVE_SEED_PATHS = (
     "/newinformation",
 )
 
+# アーカイブ一覧内の営業トリガー記事。URLにnews等がなくてもアンカー本文で優先する。
+_ARCHIVE_TRIGGER_RE = re.compile(
+    r"出展|展示会|見本市|フェア|ブース|exhibition|expo|trade\s*show|新製品|新商品",
+    re.IGNORECASE,
+)
+
 
 def _make_session() -> requests.Session:
     s = requests.Session()
@@ -272,9 +278,8 @@ def _is_archive_context_url(url: str) -> bool:
 def _archive_navigation_priority(current_url: str, target_url: str, anchor_text: str) -> int:
     """一覧ページから必要なページ送り/年別だけを優先する。
 
-    WordPress等のページャに表示される 5, 10, 20, 30, 46 といった遠いページを
-    一気にキューへ積むと、直近記事へ到達する前にページ枠を消費する。
-    そのためページ送りは現在ページ+1のみ、年別は今年～2年前のみ許可する。
+    遠いページ番号を一気にキューへ積まず、直近ページを優先する。
+    1→2ページ目は営業トリガー探索に重要なため、製品/採用ページより先に取得する。
     """
     if not _is_archive_context_url(current_url):
         return 0
@@ -283,21 +288,32 @@ def _archive_navigation_priority(current_url: str, target_url: str, anchor_text:
     current_page = _page_number(current_url) or 1
     target_page = _page_number(target_url)
     if target_page is not None:
-        return 25 if target_page == current_page + 1 else 0
+        if target_page != current_page + 1:
+            return 0
+        # 2ページ目を最優先。3ページ目までは追うが、それ以降は打ち切る。
+        if target_page == 2:
+            return 150
+        if target_page == 3:
+            return 55
+        return 0
 
     # 明示的な「次へ」はURL形式が/page/NでないCMSもあるため許可する。
     if anchor in {">", "»", "next", "次へ", "次のページ"}:
-        return 25
+        if current_page == 1:
+            return 150
+        if current_page == 2:
+            return 55
+        return 0
 
     year = _archive_year(target_url, anchor_text)
     if year is not None:
         current_year = date.today().year
         if year == current_year:
-            return 90
+            return 140
         if year == current_year - 1:
-            return 12
+            return 18
         if year == current_year - 2:
-            return 8
+            return 12
         return 0
 
     return 0
@@ -316,6 +332,7 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
         return []
 
     site_host = _host_key(site_url)
+    archive_context = _is_archive_context_url(current_url)
     found: dict[str, int] = {}
     for a in soup.find_all("a", href=True):
         href = str(a.get("href") or "").strip()
@@ -331,15 +348,19 @@ def _discover_candidate_links(html: str, current_url: str, site_url: str) -> lis
             continue
 
         canonical = _canonical_url(full)
-        anchor = a.get_text(" ", strip=True)[:120]
+        anchor = a.get_text(" ", strip=True)[:160]
         score = _link_score(canonical, anchor)
         archive_priority = _archive_navigation_priority(current_url, canonical, anchor)
         if archive_priority:
-            # アーカイブ移動は通常リンクスコアを上書きし、今年→詳細記事→前年の順に進みやすくする。
             score = archive_priority
         elif _page_number(canonical) is not None or _archive_year(canonical, anchor) is not None:
-            # 遠いページ番号・古い年別リンクは、URLにnews/eventが含まれていても通常リンクとして拾わない。
+            # 遠いページ番号・古い年別リンクは通常リンクとして拾わない。
             score = 0
+        elif archive_context and _ARCHIVE_TRIGGER_RE.search(anchor):
+            # 京写の /2026/06/08/9240 のようにURL自体にはnews/exhibitionがなくても、
+            # 一覧の見出しが展示会・出展を示す記事は最優先で本文確認する。
+            score = max(score, 170)
+
         if score <= 0:
             continue
         if score > found.get(canonical, 0):
