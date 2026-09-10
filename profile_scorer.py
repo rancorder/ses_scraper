@@ -5,17 +5,20 @@ YAMLで定義した評価軸・配点に基づいて企業サイトをスコア�
 既存の scoring_engine.py を置き換える案件プロファイル対応版。
 
 各評価軸の detection タイプ:
-  keyword_any              : いずれかのキーワードが1つでもヒットしたら加点
-  keyword_count            : min_hits 以上のキーワードがヒットしたら加点
-  keyword_and_pattern      : キーワード OR 正規表現パターンでヒット
-  keyword_groups_all       : keyword_groups の各グループで1件以上ヒットしたら加点
-  keyword_any_on_page      : 特定URLパスのページでキーワードがヒット
-  recent_keyword_any       : 同一ページでKWと直近N年の日付が確認できたら加点
+  keyword_any               : いずれかのキーワードが1つでもヒットしたら加点
+  keyword_count             : min_hits 以上のキーワードがヒットしたら加点
+  keyword_and_pattern       : キーワード OR 正規表現パターンでヒット
+  keyword_groups_all        : keyword_groups の各グループで1件以上ヒットしたら加点
+  keyword_any_on_page       : 特定URLパスのページでキーワードがヒット
+  recent_keyword_any        : 同一ページでKWと直近N年の日付が確認できたら加点
   recent_keyword_any_on_page: 対象ページ内でKWと直近N年の日付が同時に確認できたら加点
-  url_exists               : url_signalsいずれかのURLが存在したら加点
-  contact                  : メールアドレスまたはお問い合わせフォームが存在
-  regex                    : 正規表現マッチ
-  manual                   : 自動判定せず要確認として出力
+  exhibition_upcoming       : 展示会/出展KWと将来日付を同一ページで確認
+  exhibition_recent         : 展示会/出展KWと直近N年の日付を同一ページで確認
+  contact_department        : 連絡手段と部署情報の両方を確認
+  url_exists                : url_signalsいずれかのURLが存在したら加点
+  contact                   : メールアドレスまたはお問い合わせフォームが存在
+  regex                     : 正規表現マッチ
+  manual                    : 自動判定せず要確認として出力
 """
 from __future__ import annotations
 
@@ -143,23 +146,31 @@ def _url_exists(pages: list, url_signals: list[str]) -> bool:
     return False
 
 
+def _extract_full_dates(text: str) -> list[date]:
+    """ページ本文から日単位で確定できる日付のみ抽出する。"""
+    found: set[date] = set()
+    patterns = [
+        r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})",
+        r"(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日",
+    ]
+    for pat in patterns:
+        for match in re.finditer(pat, text):
+            try:
+                found.add(date(int(match.group(1)), int(match.group(2)), int(match.group(3))))
+            except ValueError:
+                continue
+    return sorted(found)
+
+
 def _contains_recent_date(text: str, recent_years: int) -> tuple[bool, str]:
     """本文中の日付が概ね直近N年かを判定する。"""
     today = date.today()
     cutoff = today - timedelta(days=max(1, recent_years) * 365)
 
-    full_date_patterns = [
-        r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})",
-        r"(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日",
-    ]
-    for pat in full_date_patterns:
-        for match in re.finditer(pat, text):
-            try:
-                d = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
-            except ValueError:
-                continue
-            if cutoff <= d <= today + timedelta(days=31):
-                return True, d.isoformat()
+    full_dates = _extract_full_dates(text)
+    recent_full = [d for d in full_dates if cutoff <= d <= today + timedelta(days=31)]
+    if recent_full:
+        return True, max(recent_full).isoformat()
 
     years = [int(y) for y in re.findall(r"(?<!\d)(20\d{2})(?!\d)", text)]
     recent_year_floor = today.year - max(1, recent_years)
@@ -191,8 +202,76 @@ def _recent_keyword_evidence(
             return True, list(dict.fromkeys(page_hits)), detail
 
     if saw_hits:
-        return False, list(dict.fromkeys(saw_hits)), "新製品KWあり／直近日付未確認"
-    return False, [], "新製品KW未確認"
+        return False, list(dict.fromkeys(saw_hits)), "対象KWあり／直近日付未確認"
+    return False, [], "対象KW未確認"
+
+
+def _exhibition_evidence(
+    pages: list,
+    keywords: list[str],
+    mode: str,
+    recent_years: int = 2,
+) -> tuple[bool, list[str], str]:
+    """展示会の予定または直近実績を、ページ単位のKW＋日付で確認する。
+
+    予定は将来日付があるページのみ、実績は直近N年の過去日付があるページのみを
+    Evidenceとする。資料にない推測で開催日や展示会名を補完しない。
+    """
+    today = date.today()
+    cutoff = today - timedelta(days=max(1, recent_years) * 365)
+    future_limit = today + timedelta(days=730)
+    saw_hits = False
+
+    candidates: list[tuple[date, str, str, list[str]]] = []
+    for p in pages:
+        page_text = _all_text_from_pages([p])
+        page_hits = _hit_keywords(_normalize(page_text), keywords)
+        if not page_hits:
+            continue
+        saw_hits = True
+        dates = _extract_full_dates(page_text)
+        if mode == "upcoming":
+            matched = [d for d in dates if today <= d <= future_limit]
+        else:
+            matched = [d for d in dates if cutoff <= d < today]
+        if not matched:
+            continue
+
+        evidence_date = min(matched) if mode == "upcoming" else max(matched)
+        title = str(getattr(p, "title", "") or "").strip()
+        url = str(getattr(p, "url", "") or "").strip()
+        candidates.append((evidence_date, title, url, page_hits))
+
+    if not candidates:
+        if saw_hits:
+            label = "将来日付" if mode == "upcoming" else f"直近{recent_years}年の過去日付"
+            return False, [], f"展示会KWあり／{label}未確認"
+        return False, [], "展示会Evidence未確認"
+
+    chosen = min(candidates, key=lambda x: x[0]) if mode == "upcoming" else max(candidates, key=lambda x: x[0])
+    evidence_date, title, url, page_hits = chosen
+    kind = "出展予定" if mode == "upcoming" else "出展実績"
+    parts = [f"{kind}:{evidence_date.isoformat()}"]
+    if title:
+        parts.append(title[:60])
+    if url:
+        parts.append(url)
+    # Excelではdetailをそのまま見せたいので、展示会系はhit_keywordsを空にする。
+    return True, [], " / ".join(parts)
+
+
+def _contact_department_evidence(
+    pages: list,
+    department_keywords: list[str],
+) -> tuple[bool, list[str], str]:
+    """問い合わせ手段と営業対象になり得る部署情報の両方を確認する。"""
+    if not _has_contact(pages):
+        return False, [], "連絡手段未確認"
+    all_text = _normalize(_all_text_from_pages(pages))
+    hits = _hit_keywords(all_text, department_keywords)
+    if not hits:
+        return False, [], "連絡手段あり／部署情報未確認"
+    return True, list(dict.fromkeys(hits)), "連絡手段＋部署情報を確認"
 
 
 # ════════════════════════════════════════════════════════
@@ -275,6 +354,25 @@ def _evaluate_axis(axis: dict[str, Any], pages: list, all_text: str) -> AxisResu
             )
         else:
             detail = "対象ページなし"
+
+    elif detection == "exhibition_upcoming":
+        earned, hits, detail = _exhibition_evidence(
+            pages,
+            keywords,
+            "upcoming",
+            int(axis.get("recent_years", 2)),
+        )
+
+    elif detection == "exhibition_recent":
+        earned, hits, detail = _exhibition_evidence(
+            pages,
+            keywords,
+            "recent",
+            int(axis.get("recent_years", 2)),
+        )
+
+    elif detection == "contact_department":
+        earned, hits, detail = _contact_department_evidence(pages, keywords)
 
     elif detection == "regex":
         pattern = axis.get("pattern", "")
