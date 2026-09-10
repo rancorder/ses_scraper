@@ -10,7 +10,8 @@ YAMLで定義した評価軸・配点に基づいて企業サイトをスコア�
   keyword_and_pattern      : キーワード OR 正規表現パターンでヒット
   keyword_groups_all       : keyword_groups の各グループで1件以上ヒットしたら加点
   keyword_any_on_page      : 特定URLパスのページでキーワードがヒット
-  recent_keyword_any_on_page: 特定ページでKWと直近N年の日付が同時に確認できたら加点
+  recent_keyword_any       : 同一ページでKWと直近N年の日付が確認できたら加点
+  recent_keyword_any_on_page: 対象ページ内でKWと直近N年の日付が同時に確認できたら加点
   url_exists               : url_signalsいずれかのURLが存在したら加点
   contact                  : メールアドレスまたはお問い合わせフォームが存在
   regex                    : 正規表現マッチ
@@ -21,7 +22,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ class AxisResult:
     id:           str
     name:         str
     points:       int
-    earned:       bool        # 加点またはEvidence検出されたか
-    score:        int         # 採点軸ではpoints、調査項目では通常0
+    earned:       bool
+    score:        int
     hit_keywords: list[str] = field(default_factory=list)
     detail:       str = ""
 
@@ -46,9 +47,9 @@ class ProfileScore:
     company_url:   str
     profile_name:  str
     total_score:   int
-    raw_score:     int         # キャップ前の合計
+    raw_score:     int
     score_cap:     int
-    judgment:      str         # ◎/○/△/－ または S/A/B/C 等
+    judgment:      str
     axes:          list[AxisResult] = field(default_factory=list)
     report_fields: list[AxisResult] = field(default_factory=list)
 
@@ -67,8 +68,10 @@ class ProfileScore:
         ]
         for ax in self.axes:
             mark = "✓" if ax.earned else "✗"
-            lines.append(f"  {mark} {ax.name}: {ax.score}点"
-                         + (f" ({', '.join(ax.hit_keywords[:3])})" if ax.hit_keywords else ""))
+            lines.append(
+                f"  {mark} {ax.name}: {ax.score}点"
+                + (f" ({', '.join(ax.hit_keywords[:3])})" if ax.hit_keywords else "")
+            )
         return "\n".join(lines)
 
 
@@ -141,11 +144,7 @@ def _url_exists(pages: list, url_signals: list[str]) -> bool:
 
 
 def _contains_recent_date(text: str, recent_years: int) -> tuple[bool, str]:
-    """本文中の日付が概ね直近N年かを判定する。
-
-    完全な日付は今日からN*365日前で比較する。年だけしか取れない場合は
-    現在年-N年以上を補助Evidenceとして扱う。
-    """
+    """本文中の日付が概ね直近N年かを判定する。"""
     today = date.today()
     cutoff = today - timedelta(days=max(1, recent_years) * 365)
 
@@ -168,6 +167,32 @@ def _contains_recent_date(text: str, recent_years: int) -> tuple[bool, str]:
     if recent:
         return True, str(max(recent))
     return False, ""
+
+
+def _recent_keyword_evidence(
+    pages: list,
+    keywords: list[str],
+    recent_years: int,
+) -> tuple[bool, list[str], str]:
+    """同一ページ内でキーワードと直近日付が共存するEvidenceを探す。"""
+    saw_hits: list[str] = []
+    for p in pages:
+        page_text = _all_text_from_pages([p])
+        page_hits = _hit_keywords(_normalize(page_text), keywords)
+        if not page_hits:
+            continue
+        saw_hits.extend(page_hits)
+        recent, evidence = _contains_recent_date(page_text, recent_years)
+        if recent:
+            url = getattr(p, "url", "")
+            detail = f"直近日付Evidence:{evidence}"
+            if url:
+                detail += f" / {url}"
+            return True, list(dict.fromkeys(page_hits)), detail
+
+    if saw_hits:
+        return False, list(dict.fromkeys(saw_hits)), "新製品KWあり／直近日付未確認"
+    return False, [], "新製品KW未確認"
 
 
 # ════════════════════════════════════════════════════════
@@ -233,22 +258,21 @@ def _evaluate_axis(axis: dict[str, Any], pages: list, all_text: str) -> AxisResu
         else:
             detail = "対象ページなし"
 
+    elif detection == "recent_keyword_any":
+        earned, hits, detail = _recent_keyword_evidence(
+            pages,
+            keywords,
+            int(axis.get("recent_years", 2)),
+        )
+
     elif detection == "recent_keyword_any_on_page":
         target = _pages_with_path(pages, tgt_pages) if tgt_pages else pages
         if target:
-            target_text = _all_text_from_pages(target)
-            hits = _hit_keywords(_normalize(target_text), keywords)
-            recent, recent_evidence = _contains_recent_date(
-                target_text,
+            earned, hits, detail = _recent_keyword_evidence(
+                target,
+                keywords,
                 int(axis.get("recent_years", 2)),
             )
-            earned = bool(hits) and recent
-            if recent_evidence:
-                detail = f"直近日付Evidence:{recent_evidence}"
-            elif hits:
-                detail = "新製品KWあり／直近日付未確認"
-            else:
-                detail = "新製品KW未確認"
         else:
             detail = "対象ページなし"
 
@@ -300,18 +324,18 @@ class ProfileScorer:
     """YAMLプロファイルの scoring_axes に基づいてスコアリングする。"""
 
     def __init__(self, profile) -> None:
-        self.profile    = profile
-        self.axes_defs  = getattr(profile, "scoring_axes", [])
+        self.profile = profile
+        self.axes_defs = getattr(profile, "scoring_axes", [])
         self.report_defs = getattr(profile, "report_fields", [])
-        self.score_cap  = getattr(profile, "score_cap", 100)
+        self.score_cap = getattr(profile, "score_cap", 100)
         self.score_sum_max = getattr(profile, "score_sum_max", 100)
         self.threshold_excellent = getattr(profile, "threshold_excellent", 70)
-        self.threshold_good      = getattr(profile, "threshold_good", 50)
+        self.threshold_good = getattr(profile, "threshold_good", 50)
 
     def score(
         self,
         company_name: str,
-        company_url:  str,
+        company_url: str,
         parsed_pages: list,
     ) -> ProfileScore:
         all_text = _all_text_from_pages(parsed_pages)
@@ -332,12 +356,12 @@ class ProfileScorer:
         bonus_rules = getattr(self.profile, "bonus_rules", []) or []
         for rule in bonus_rules:
             conditions = rule.get("condition", [])
-            bonus      = rule.get("bonus", 0)
+            bonus = rule.get("bonus", 0)
             if all(kw.lower() in _normalize(all_text) for kw in conditions):
                 bonus_total += bonus
                 log.debug(f"  ボーナス適用: {rule.get('name','')} +{bonus}点")
 
-        raw_score  += bonus_total
+        raw_score += bonus_total
         total_score = min(raw_score, self.score_cap)
         if raw_score <= -100:
             total_score = raw_score
