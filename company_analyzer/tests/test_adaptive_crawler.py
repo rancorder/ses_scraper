@@ -122,6 +122,8 @@ def test_year_archive_keeps_relevant_dated_article_and_next_page():
     <a href="/{year}/06/08/9240/">JPCAショー{year} 電子機器トータルソリューション展に出展します</a>
     <a href="/{year}/page/2/">2</a>
     <a href="/{year}/page/5/">5</a>
+    <a href="/products/jig/magicarrier_x/">ノンシリコーンタイプ粘着キャリア MagiCarrier-X 製品</a>
+    <a href="/recruit/career/">キャリア採用情報</a>
     """
     links = _discover_candidate_links(
         html,
@@ -129,11 +131,20 @@ def test_year_archive_keeps_relevant_dated_article_and_next_page():
         "https://example.com/",
     )
     urls = [url for _, url in links]
+    scores = {url: score for score, url in links}
 
-    assert f"https://example.com/{year}/06/08/9240" in urls
-    assert f"https://example.com/{year}/page/2" in urls
+    article = f"https://example.com/{year}/06/08/9240"
+    page2 = f"https://example.com/{year}/page/2"
+    product = "https://example.com/products/jig/magicarrier_x"
+    recruit = "https://example.com/recruit/career"
+
+    assert article in urls
+    assert page2 in urls
     assert f"https://example.com/{year}/08/26/9330" not in urls
     assert f"https://example.com/{year}/page/5" not in urls
+    assert scores[article] > scores[page2]
+    assert scores[page2] > scores[product]
+    assert scores[page2] > scores[recruit]
 
 
 def test_fetch_page_keeps_final_redirect_url():
