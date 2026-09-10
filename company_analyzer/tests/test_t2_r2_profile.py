@@ -152,6 +152,60 @@ def test_upcoming_article_publish_date_is_not_counted_as_past_exhibition():
     assert recent.earned is False
 
 
+def test_past_announcement_is_not_confirmed_exhibition_history():
+    profile = load_profile("t2_lab")
+    past = (date.today() - timedelta(days=60)).isoformat()
+    pages = [
+        _page(
+            "https://example.com/news/whx",
+            f"Example株式会社は「WHX Osaka 2026」に共同出展いたします。開催日 {past}",
+            title="展示会出展のご案内「WHX Osaka 2026」",
+        )
+    ]
+    result = ProfileScorer(profile).score("Example株式会社", "https://example.com", pages)
+    recent = _report(result, "exhibition_recent")
+
+    assert recent.earned is False
+    assert "過去出展告知:" in recent.detail
+    assert "WHX Osaka 2026" in recent.detail
+    assert "実績未確認" in recent.detail
+
+
+def test_quoted_event_name_without_exhibition_word_is_extracted():
+    profile = load_profile("t2_lab")
+    past = (date.today() - timedelta(days=90)).isoformat()
+    pages = [
+        _page(
+            "https://example.com/news/smart-sensing",
+            f"Example株式会社は「Smart Sensing 2026」に出展しました。開催日 {past}",
+            title="Smart Sensing 2026 出展報告",
+        )
+    ]
+    result = ProfileScorer(profile).score("Example株式会社", "https://example.com", pages)
+    recent = _report(result, "exhibition_recent")
+
+    assert recent.earned is True
+    assert "展示会:Smart Sensing 2026" in recent.detail
+
+
+def test_thank_you_page_counts_as_confirmed_exhibition_history():
+    profile = load_profile("t2_lab")
+    past = (date.today() - timedelta(days=180)).isoformat()
+    pages = [
+        _page(
+            "https://example.com/news/jimtof",
+            f"Example株式会社 第32回 日本国際工作機械見本市(JIMTOF2024)、弊社ブースにご来場くださいましてありがとうございました。開催日 {past}",
+            title="第32回 日本国際工作機械見本市(JIMTOF2024)、弊社ブースにご来場くださいましてありがとうございました。",
+        )
+    ]
+    result = ProfileScorer(profile).score("Example株式会社", "https://example.com", pages)
+    recent = _report(result, "exhibition_recent")
+
+    assert recent.earned is True
+    assert "出展実績:" in recent.detail
+    assert "日本国際工作機械見本市" in recent.detail
+
+
 def test_exhibition_requires_target_company_name_match():
     profile = load_profile("t2_lab")
     future = (date.today() + timedelta(days=30)).isoformat()
